@@ -167,7 +167,7 @@ def plot_data(timestamps, forces, torques, reference_positions, euler_angles, ee
 
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = 'robot_state_log_2024_10_22_1528.json'
+    logfile = 'robot_state_log_2024_10_23_1133.json'
 
     # Load and process the log file
     data = load_log_file(logfile)
