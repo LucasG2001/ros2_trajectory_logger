@@ -189,42 +189,84 @@ def plot_data(timestamps, forces, torques, reference_positions, euler_angles, ee
     - ee_positions (dict): Dictionary of end-effector positions (x, y, z).
     - ee_orientations (dict): Dictionary of end-effector orientations (roll, pitch, yaw).
     """
+    fig, axs = plt.subplots(7, 3, figsize=(18, 18))
 
-    fig, axs = plt.subplots(4, 3, figsize=(18, 18), sharex=True)
+    # Calculate differences (diff of forces)
+    force_diff = {
+    'x': 1000 *np.diff(forces['x'], prepend=forces['x'][1]),
+    'y': 1000* np.diff(forces['y'], prepend=forces['y'][1]),
+    'z': 1000 * np.diff(forces['z'], prepend=forces['z'][1])
+    }
+    # low pass filter
+    for i in range (0, len(force_diff['x'])-1):
+        force_diff['x'][i+1] = force_diff['x'][i] * 0.99 + 0.01 * force_diff['x'][i+1]
+        force_diff['y'][i+1] = force_diff['y'][i] * 0.99 + 0.01 * force_diff['y'][i+1]
+        force_diff['z'][i+1] = force_diff['z'][i] * 0.99 + 0.01 * force_diff['z'][i+1]
 
-    # Plot forces
+
+    velocities = {
+    'vx': 1000* np.diff(ee_positions['x'], prepend=ee_positions['x'][1]), # 1 to avoid jump from 0 to somewhere
+    'vy': 1000 * np.diff(ee_positions['y'], prepend=ee_positions['y'][1]),
+    'vz': 1000 * np.diff(ee_positions['z'], prepend=ee_positions['z'][1])
+    }
+
+    # Plot forces and their differences
+    # Force X and diff
     axs[0, 0].plot(timestamps, forces['x'], 'r', label='Force X')
+    axs[0, 0].plot(timestamps, force_diff['x'], 'b', label='Diff Force X')
+    axs[0, 0].set_title('Force X and Diff')
+    axs[0, 0].legend()
+    axs[0, 0].set_xlim(left=10)
+
+    # Force Y and diff
     axs[0, 1].plot(timestamps, forces['y'], 'r', label='Force Y')
+    axs[0, 1].plot(timestamps, force_diff['y'], 'b', label='Diff Force Y')
+    axs[0, 1].set_title('Force Y and Diff')
+    axs[0, 1].legend()
+    axs[0, 1].set_xlim(left=10)
+    # Force Z and diff
     axs[0, 2].plot(timestamps, forces['z'], 'r', label='Force Z')
+    axs[0, 2].plot(timestamps, force_diff['z'], 'b', label='Diff Force Z')
+    axs[0, 2].set_title('Force Z and Diff')
+    axs[0, 2].legend()
+    axs[0, 2].set_xlim(left=10)
+    # Plot forces
+    #axs[0, 0].plot(timestamps, forces['x'], 'r', label='Force X')
+    #axs[0, 1].plot(timestamps, forces['y'], 'r', label='Force Y')
+    #axs[0, 2].plot(timestamps, forces['z'], 'r', label='Force Z')
 
     # Plot torques
     axs[1, 0].plot(timestamps, torques['x'], 'r', label='Torque X')
     axs[1, 1].plot(timestamps, torques['y'], 'r', label='Torque Y')
     axs[1, 2].plot(timestamps, torques['z'], 'r', label='Torque Z')
+    # Plot reference positions and end-effector positions
+    axs[2, 0].plot(timestamps, reference_positions['x'], 'r', label='Ref Position X')
+    axs[2, 0].plot(timestamps, ee_positions['x'], 'b', label='EE Position X')
+    axs[2, 1].plot(timestamps, reference_positions['y'], 'r', label='Ref Position Y')
+    axs[2, 1].plot(timestamps, ee_positions['y'], 'b', label='EE Position Y')
+    axs[2, 2].plot(timestamps, reference_positions['z'], 'r', label='Ref Position Z')
+    axs[2, 2].plot(timestamps, ee_positions['z'], 'b', label='EE Position Z')
+    
+    # plot velocities
+    axs[3, 0].plot(timestamps, velocities['vx'], 'g', label='EE Velocity X')
+    axs[3, 1].plot(timestamps, velocities['vy'], 'b', label='EE Velocity Y')
+    axs[3, 2].plot(timestamps, velocities['vz'], 'b', label='EE Velocity Z')
+    axs[3, 0].set_xlim(left=10)
+    axs[3, 1].set_xlim(left=10)
+    axs[3, 2].set_xlim(left=10)
+    axs[3, 0].set_ylim([-0.4, 0.4])
+    axs[3, 1].set_ylim([-0.4, 0.4])
+    axs[3, 2].set_ylim([-0.4, 0.4])
 
-    # Plot accelerations
-    axs[2, 0].plot(timestamps, accelerations['x'], 'r', label='Acceleration X')
-    axs[2, 1].plot(timestamps, accelerations['y'], 'r', label='Acceleration Y')
-    axs[2, 2].plot(timestamps, accelerations['z'], 'r', label='Acceleration Z')
-
-
-    # # Plot reference positions and end-effector positions
-    # axs[2, 0].plot(timestamps, reference_positions['x'], 'r', label='Ref Position X')
-    axs[3, 0].plot(timestamps, ee_positions['x'], 'b', label='EE Position X')
-    # axs[2, 1].plot(timestamps, reference_positions['y'], 'r', label='Ref Position Y')
-    axs[3, 1].plot(timestamps, ee_positions['y'], 'b', label='EE Position Y')
-    # axs[2, 2].plot(timestamps, reference_positions['z'], 'r', label='Ref Position Z')
-    axs[3, 2].plot(timestamps, ee_positions['z'], 'b', label='EE Position Z')
 
     # Plot Euler angles and end-effector orientations
-    '''     
-    axs[3, 0].plot(timestamps, euler_angles['roll'], 'r', label='Ref Roll')
-    axs[3, 0].plot(timestamps, ee_orientations['roll'], 'b', label='EE Roll')
-    axs[3, 1].plot(timestamps, euler_angles['pitch'], 'r', label='Ref Pitch')
-    axs[3, 1].plot(timestamps, ee_orientations['pitch'], 'b', label='EE Pitch')
-    axs[3, 2].plot(timestamps, euler_angles['yaw'], 'r', label='Ref Yaw')
-    axs[3, 2].plot(timestamps, ee_orientations['yaw'], 'b', label='EE Yaw')
-    '''
+    axs[4, 0].plot(timestamps, euler_angles['roll'], 'r', label='Ref Roll')
+    axs[4, 0].plot(timestamps, ee_orientations['roll'], 'b', label='EE Roll')
+    axs[4, 1].plot(timestamps, euler_angles['pitch'], 'r', label='Ref Pitch')
+    axs[4, 1].plot(timestamps, ee_orientations['pitch'], 'b', label='EE Pitch')
+    axs[4, 2].plot(timestamps, euler_angles['yaw'], 'r', label='Ref Yaw')
+    axs[4, 2].plot(timestamps, ee_orientations['yaw'], 'b', label='EE Yaw')
+
     # Set titles for plots
     axs[0, 0].set_title('Force X')
     axs[0, 1].set_title('Force Y')
@@ -383,8 +425,8 @@ def plot_phase_distortion(w, phase_response, fs):
 
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = '/home/nilsjohnson/franka_ros2_ws/src/robot_trajectory_logger/robot_trajectory_logger/logs/robot_state_log_2024_10_18_1857.json'
-    
+    logfile = 'testfile.json'
+
     # Load and process the log file
     data = load_log_file(logfile)
     timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations = extract_data(data)

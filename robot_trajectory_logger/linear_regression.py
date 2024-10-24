@@ -179,8 +179,11 @@ def plot_force_fft(data, sampling_rate):
 
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = '/home/nilsjohnson/Documents/BA/data_analysis/logs/robot_state_log_2024_10_18_1857.json'
+
+    logfile = 'testfile.json'
+
     
+
     # Load and process the log file
     data = load_log_file(logfile)
     timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations = extract_data(data)
@@ -189,61 +192,52 @@ if __name__ == "__main__":
     force_z = np.array(forces['z'])
     displacement_z = np.array(ee_positions['z'])
 
-    sampling_rate = 1000  # 1000 Hz update rate
+    velocities_z = 1000 * np.diff(ee_positions['z'], prepend=ee_positions['z'][1])
+     # low pass filter
+    for i in range (0, len(velocities_z)-1):
+       velocities_z[i+1] = velocities_z[i] * 0.9 + 0.1 * velocities_z[i+1]
+        
+
+
+
 
     # Define window size (40 measurements) and step size (you can use 40 for non-overlapping)
+
     window_size = 3  # Number of measurements per window
+
     step_size = 1    # Move 40 points at a time (non-overlapping)
 
+
+
     # Perform sliding window linear regression for Z axis
-    F_h_z_list, k_z_list = sliding_window_regression(displacement_z, force_z, window_size=window_size, step_size=step_size)
 
-    # Get timestamps for the starting points of each sliding window
-    window_start_timestamps = timestamps[:len(F_h_z_list)]  # Make sure it matches the length of F_h_z_list
+    F_h_z_list, k_z_list = sliding_window_regression(velocities_z, -force_z, window_size=window_size, step_size=step_size)
 
-    
+    for i in range (0, len(k_z_list)-1):
+       k_z_list[i+1] = k_z_list[i] * 0.9 + 0.1 * k_z_list[i+1]
 
-    plot_force_fft(k_z_list, sampling_rate)
-    
-    k_z_filtered = butter_lowpass_filter(k_z_list, low = 1 ,high = 3 , fs=sampling_rate, order=2)
+    # Print results
 
-    # Compute the first derivative
-    k_z_filtered_derivative = np.gradient(k_z_filtered)
+    print(f"Estimated F_h values for each window (Z-axis): {F_h_z_list}")
 
-    # Ensure both arrays have the same length for plotting
-    window_start_timestamps = window_start_timestamps[:len(k_z_filtered_derivative)]
-    k_z_filtered_derivative = k_z_filtered_derivative[:len(window_start_timestamps)]
-    
-    # Plot linear regression results alongside position or force data
-    fig, axs = plt.subplots(4, 1, figsize=(18, 18), sharex=True)
+    print(f"Estimated k values (stiffness) for each window (Z-axis): {k_z_list}")
 
-    # Plot the displacement (Z-axis)
-    axs[0].plot(timestamps, displacement_z, label="Displacement (Z-axis)", color='blue')
-    axs[0].set_xlabel("Timestamps")
-    axs[0].set_ylabel("Displacement (Z)")
-    axs[0].legend()
-    axs[0].grid(True)
 
-    # Plot the filtered force (Z-axis)
-    axs[1].plot(timestamps, force_z, label="Force (Z-axis)", color='green')
-    axs[1].set_xlabel("Timestamps")
-    axs[1].set_ylabel("Force (Z)")
-    axs[1].legend()
-    axs[1].grid(True)
 
-    # Plot the linear regression results (F_h and k for the Z-axis)
-    axs[2].plot(window_start_timestamps, F_h_z_list, label="F_h (Z-axis)", color='orange')
-    axs[2].plot(window_start_timestamps, k_z_filtered, label="k (Stiffness Z-axis)", color='red')
-    axs[2].set_xlabel("Timestamps")
-    axs[2].set_ylabel("Linear Regression Output")
-    axs[2].legend()
-    axs[2].grid(True)
+    # Plot results
 
-    axs[3].plot(window_start_timestamps, k_z_filtered_derivative, label="Derivative k (Z-axis)", color='blue')
-    axs[3].set_xlabel("Timestamps")
-    axs[3].set_ylabel("Derivative_k (Z)")
-    axs[3].legend()
-    axs[3].grid(True)
+    plt.figure(figsize=(10, 6))
 
-    plt.tight_layout()
+    plt.plot(F_h_z_list, label="F_h (Z-axis)")
+
+    plt.plot(k_z_list, label="k (stiffness Z-axis)")
+
+    plt.xlabel("Window Index")
+
+    plt.ylabel("Estimated Values")
+
+    plt.legend()
+
+    plt.grid(True)
+
     plt.show()
