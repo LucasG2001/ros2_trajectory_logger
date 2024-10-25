@@ -3,6 +3,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Wrench, Pose
 from sensor_msgs.msg import JointState  # Replace with correct message type for franka_robot_state
 from franka_msgs.msg import FrankaRobotState
+from custom_msgs.srv import PlannerService
 from std_srvs.srv import Trigger
 import numpy as np
 import json
@@ -50,6 +51,9 @@ class RobotTrajectoryLogger(Node):
         # Add the Pose publisher
         self.pose_publisher = self.create_publisher(Pose, 'admittance_controller/reference_pose', 10)
 
+        # Create a service server for PlannerService
+        self.srv = self.create_service(PlannerService, 'planner_service', self.handle_service)
+
         # Timer for sending trajectory at 20Hz
         self.timer_send_trajectory = self.create_timer(1.0 / 0.3, self.send_trajectory)
 
@@ -83,6 +87,26 @@ class RobotTrajectoryLogger(Node):
         self.log_file = (f"robot_state_log_{timestamp}.json")
         print(self.log_file)
 
+        # Initialize force bias so this can be set via service
+        self.bias_force = np.array([0.0, 0.0, 0.0])
+
+    def handle_service(self, request, response):
+        command = request.command
+        match command:
+            case 'a':
+                self.logging_active = True
+                if self.f_ext is not None:
+                    self.bias_force = np.array([self.f_ext.force._x, self.f_ext.force._y, self.f_ext.force._z])
+                self.get_logger().info(f'Logging activated. Force bias set to: {self.bias_force}')
+                response.success = True
+            case 'd':
+                self.logging_active = False
+                self.get_logger().info('Logging deactivated.')
+                response.success = True
+            case _:
+                response.success = False
+        return response
+    
     def send_trajectory(self):
         current_time = time.time() - self.time_start
         amplitude = 0.3
@@ -103,18 +127,25 @@ class RobotTrajectoryLogger(Node):
         self.ee_euler_angles = quaternion_to_euler(quaternion)
 
     def log_data(self):
-            # Ensure data is available before logging
+
+        if not self.logging_active:
+            return
+        
+        # Ensure data is available before logging
         if self.f_ext is None or self.reference_pose is None or self.ee_euler_angles is None:
             self.get_logger().warn("f_ext is None. Skipping log entry.")
             return
         
+        # Adjust the force by subtracting the bias
+        adjusted_force = np.array([self.f_ext.force._x, self.f_ext.force._y, self.f_ext.force._z]) - self.bias_force
+
         # Prepare the data to log
         data_to_log = {
             "f_ext": {
                 "force": {
-                    "x": self.f_ext._force._x,
-                    "y": self.f_ext._force._y,
-                    "z": self.f_ext._force._z
+                    "x": adjusted_force[0],
+                    "y": adjusted_force[1],
+                    "z": adjusted_force[2]
                 },
                 "torque": {
                     "x": self.f_ext._torque._x,

@@ -11,7 +11,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools', 'admittance_control'],
+    install_requires=['setuptools', 'admittance_control','custom_msgs'],
     zip_safe=True,
     maintainer='lucas',
     maintainer_email='gimenol@student.ethz.ch',
@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
              'robot_trajectory_logger = robot_trajectory_logger.log_data:main',
+             'planner = robot_trajectory_logger.planner:main', 
         ],
     },
 )
