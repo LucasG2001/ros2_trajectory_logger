@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from messages_fr3.srv import PlannerService  # Import the custom service
 
+
 class PlannerClient(Node):
 
     def __init__(self):
@@ -29,7 +30,7 @@ def main(args=None):
 
     while rclpy.ok():
         # Get user input
-        user_input = input("Enter command (e.g., 'k' to update stiffness matrix, 'a' to activate logging, 'd' to deactivate logging, 'b' to set the bias on the force): ")
+        user_input = input("Enter command (e.g., 'i' to update inertia matrix, 'a' to activate logging, 'd' to deactivate logging, 'b' to set the bias on the force): ")
         parts = user_input.split()  # Split the input into parts
         if len(parts) >= 1:  # Check if there is at least one part
             command = parts[0]  # The first part is the command
