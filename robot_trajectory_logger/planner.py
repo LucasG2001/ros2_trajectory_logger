@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from custom_msgs.srv import PlannerService  # Import the custom service
+from messages_fr3.srv import PlannerService  # Import the custom service
 
 class PlannerClient(Node):
 

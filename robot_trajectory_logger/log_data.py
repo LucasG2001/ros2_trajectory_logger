@@ -3,7 +3,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Wrench, Pose
 from sensor_msgs.msg import JointState  # Replace with correct message type for franka_robot_state
 from franka_msgs.msg import FrankaRobotState
-from custom_msgs.srv import PlannerService
+from messages_fr3.srv import PlannerService
 from std_srvs.srv import Trigger
 import numpy as np
 import json

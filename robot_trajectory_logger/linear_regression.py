@@ -180,7 +180,7 @@ def plot_force_fft(data, sampling_rate):
 
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = '/home/nilsjohnson/Documents/BA/data_analysis/logs/robot_state_log_2024_10_18_1857.json'
+    logfile = '/home/nilsjohnson/Documents/BA/data_analysis/logs/robot_state_log_2024_10_18_1848.json'
     
     # Load and process the log file
     data = load_log_file(logfile)
