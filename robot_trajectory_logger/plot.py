@@ -425,18 +425,18 @@ def plot_phase_distortion(w, phase_response, fs):
 
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = 'testfile.json'
+    logfile = 'src/ros2_trajectory_logger/robot_state_log_2024_11_05_1451.json'
 
     # Load and process the log file
     data = load_log_file(logfile)
     timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations = extract_data(data)
 
-    sampling_rate = 1000  # 1000 Hz update rate
+    sampling_rate = 500  # 1000 Hz update rate
 
     plot_force_fft(forces, sampling_rate)
 
     # Define the time step delta_t
-    delta_t = 1.0 / 1000.0  # Assuming 1000Hz update rate
+    delta_t = 1.0 / 500.0  # Assuming 1000Hz update rate
 
     smoothed_position = apply_ema(ee_positions, alpha=0.005)
 
@@ -482,7 +482,7 @@ if __name__ == "__main__":
     #plot_force_vs_position(truncated_timestamps, {'z': truncated_forces_z}, {'z': truncated_positions_z})
 
     # Plot deltas
-    sampling_rate = 1000  # 1000 Hz update rate
+    sampling_rate = 500  # 1000 Hz update rate
     delta_force_z = compute_deltas(smoothed_forces['z'], 30, sampling_rate)
     delta_x_z = compute_deltas(ee_positions['z'], 30, sampling_rate)
     timestamps, delta_force_z, delta_x_z = truncate_to_shortest_length(timestamps, delta_force_z, delta_x_z)

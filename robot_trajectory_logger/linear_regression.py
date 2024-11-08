@@ -2,6 +2,7 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import Ridge
 from scipy.signal import butter, filtfilt
 from scipy.ndimage import gaussian_filter
 
@@ -45,6 +46,9 @@ def extract_data(data):
     ee_positions = {'x': [], 'y': [], 'z': []}
     ee_orientations = {'roll': [], 'pitch': [], 'yaw': []}
     accelerations = {'x': [], 'y': [], 'z': []}
+    joint_velocities = [] 
+    jacobianEE = []
+    dtjacobianEE = []
 
     for entry in data:
         # Extract force data
@@ -77,6 +81,26 @@ def extract_data(data):
         ee_orientations['pitch'].append(entry['ee_pose']['orientation']['pitch'])
         ee_orientations['yaw'].append(entry['ee_pose']['orientation']['yaw'])
 
+        # # Extract joint velocities
+        # joint_velocities.append(entry['measured_joint_velocities'])
+
+        # # Extract jacobianEE
+        # jacobianEE.append(entry['jacobianEE'])
+
+        # # Extract dtjacobianEE
+        # dtjacobianEE.append(entry['dtjacobianEE'])
+
+        # # Convert Jacobian arrays to (6,7) matrices
+        # if entry['jacobianEE']:
+        #     jacobianEE.append(np.array(entry['jacobianEE']).reshape(6, 7))
+        # else:
+        #     jacobianEE.append(np.zeros((6, 7)))  # Corrected syntax
+
+        # if entry['dtjacobianEE']:
+        #     dtjacobianEE.append(np.array(entry['dtjacobianEE']).reshape(6, 7))
+        # else:
+        #     dtjacobianEE.append(np.zeros((6, 7)))  # Corrected syntax
+
     return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations
 
 def perform_linear_regression(x, F_ext):
@@ -91,20 +115,23 @@ def perform_linear_regression(x, F_ext):
     - F_h (float): The estimated value of F_h for the axis.
     - k (float): The estimated value of k (stiffness) for the axis.
     """
-    # Prepare the independent variable matrix: [1, -x]
-    X = np.vstack([np.ones(len(x)), -x]).T  # Transpose to match the shape (n_samples, 2)
     
+    # Prepare the independent variable matrix: [1, -x]
+    X = np.vstack([-x,np.ones(len(x))]).T  # Transpose to match the shape (n_samples, 2)
+
     # Perform linear regression
     model = LinearRegression(fit_intercept=False)  # No intercept because we are already handling F_h
     model.fit(X, F_ext)
     
     # The coefficients of the model are F_h and k
 
-    k = model.coef_[0]
+    k = model.coef_[1]
+    # print("coeff_0: ", model.coef_[0])
+    # print("coeff_1: ", model.coef_[1])
     F_h = model.intercept_
     return F_h, k
 
-def sliding_window_regression(displacement, force, window_size=40, step_size=40):
+def sliding_window_regression(displacement, force, window_size, step_size):
     """
     Applies linear regression on each sliding window of data.
     
@@ -136,7 +163,7 @@ def sliding_window_regression(displacement, force, window_size=40, step_size=40)
     
     return F_h_list, k_list
 
-def butter_lowpass_filter(data, cutoff, fs, order):
+def butter_band_filter(data, high,low, fs, order):
     """
     Apply a Butterworth low-pass filter to the data.
 
@@ -151,7 +178,7 @@ def butter_lowpass_filter(data, cutoff, fs, order):
     """
     filtered_data = {}
     
-    b, a = butter(order, cutoff / (fs / 2), btype='low')
+    b, a = butter(order, [high / (fs / 2), low / (fs / 2)], btype='band')
     filtered_data = filtfilt(b, a, data)
 
     return filtered_data
@@ -180,7 +207,7 @@ def plot_force_fft(data, sampling_rate):
 
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = '/home/nilsjohnson/Documents/BA/data_analysis/logs/robot_state_log_2024_10_18_1848.json'
+    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2024_11_01_1818.json'
     
     # Load and process the log file
     data = load_log_file(logfile)
@@ -189,27 +216,48 @@ if __name__ == "__main__":
     # Convert lists to numpy arrays for further processing
     force_z = np.array(forces['z'])
     displacement_z = np.array(ee_positions['z'])
+    # joint_velocities = np.array(joint_velocities)
+    # jacobianEE = np.array(jacobianEE)
+    # dtjacobianEE = np.array(dtjacobianEE)
 
-    sampling_rate = 1000  # 1000 Hz update rate
+    sampling_rate = 500  # 500 Hz update rate
 
     # Define window size (40 measurements) and step size (you can use 40 for non-overlapping)
     window_size = 3  # Number of measurements per window
     step_size = 1    # Move 40 points at a time (non-overlapping)
 
-    velocities_z = 1000 * np.diff(ee_positions['z'], prepend=ee_positions['z'][1])
+    # # Filter the joint velocity
+    # filtered_joint_velocities = np.array([
+    # butter_lowpass_filter(joint_velocities[:, i], cutoff = 1 , fs=sampling_rate, order=2)
+    # for i in range(joint_velocities.shape[1])
+    # ]).T
+
+    # filtered_joint_accelerations = 100 * np.diff(filtered_joint_velocities, axis=0, prepend=filtered_joint_velocities[0:1, :])
+    # # a_ee = dot(J) * filtered_joint_velocities + J * filtered_joint_accelerations
+    # a_ee = np.einsum('ijk,ik->ij', dtjacobianEE, filtered_joint_velocities) + np.einsum('ijk,ik->ij', jacobianEE, filtered_joint_accelerations)
+
+    # # Step 5: Extract the Z component (third row) of the end-effector acceleration
+    # z_acceleration_end_effector = a_ee[:, 2]
+
+    velocities_z = 500 * np.diff(ee_positions['z'], prepend=ee_positions['z'][1])
      # low pass filter
     for i in range (0, len(velocities_z)-1):
        velocities_z[i+1] = velocities_z[i] * 0.9 + 0.1 * velocities_z[i+1]
+    
+    acceleration_z = 500 * np.diff(velocities_z, prepend=velocities_z[1])
+
+    for i in range (0, len(acceleration_z)-1):
+       acceleration_z[i+1] = acceleration_z[i] * 0.9 + 0.1 * acceleration_z[i+1]
 
     # Perform sliding window linear regression for Z axis
-    F_h_z_list, k_z_list = sliding_window_regression(velocities_z, -force_z, window_size=window_size, step_size=step_size)
+    F_h_z_list, k_z_list = sliding_window_regression(velocities_z, -force_z, window_size, step_size)
 
     # Get timestamps for the starting points of each sliding window
     window_start_timestamps = timestamps[:len(F_h_z_list)]  # Make sure it matches the length of F_h_z_list
 
     #plot_force_fft(k_z_list, sampling_rate)
     
-    k_z_filtered = butter_lowpass_filter(k_z_list, cutoff = 15 , fs=sampling_rate, order=2)
+    k_z_filtered = butter_band_filter(k_z_list, high = 3 , low = 100, fs=sampling_rate, order=2)
 
     # for i in range (0, len(k_z_list)-1):
     #    k_z_list[i+1] = k_z_list[i] * 0.9 + 0.1 * k_z_list[i+1]
@@ -217,7 +265,7 @@ if __name__ == "__main__":
     # Compute the first derivative
     k_z_derivative = abs(np.gradient(k_z_filtered))
 
-    force_derivative = abs(1000 * np.diff(force_z, prepend=force_z[1]))
+    force_derivative = abs(500 * np.diff(force_z, prepend=force_z[1]))
 
     # Assuming your data is stored in 'timestamps' and 'derivative_values'
     # Apply Gaussian filter
@@ -229,7 +277,16 @@ if __name__ == "__main__":
     k_z_filtered_derivative = k_z_derivative[:len(window_start_timestamps)]
     
     # Plot linear regression results alongside position or force data
-    fig, axs = plt.subplots(5, 1, figsize=(18, 18), sharex=True)
+    fig, axs = plt.subplots(7, 1, figsize=(18, 18), sharex=True)
+
+    delta = -force_z / velocities_z
+
+    # Clip delta values to be within the range [-1700, 1700]
+    delta = np.clip(delta, -1700, 1700)
+
+    k_z_list = np.clip(k_z_list, -2000, 2000)
+    k_z_filtered = np.clip(k_z_filtered, -2000, 2000)
+
 
     # Plot the displacement (Z-axis)
     axs[0].plot(timestamps, displacement_z, label="Displacement (Z-axis)", color='blue')
@@ -247,7 +304,7 @@ if __name__ == "__main__":
 
     # Plot the linear regression results (F_h and k for the Z-axis)
     axs[2].plot(window_start_timestamps, F_h_z_list, label="F_h (Z-axis)", color='orange')
-    axs[2].plot(window_start_timestamps, k_z_filtered, label="k (Stiffness Z-axis)", color='red')
+    axs[2].plot(window_start_timestamps, k_z_list, label="k (Stiffness Z-axis)", color='red')
     axs[2].set_xlabel("Timestamps")
     axs[2].set_ylabel("Linear Regression Output")
     axs[2].legend()
@@ -259,11 +316,23 @@ if __name__ == "__main__":
     axs[3].legend()
     axs[3].grid(True)
 
-    axs[4].plot(timestamps, force_derivative, label="Derivative F (Z-axis)", color='blue')
+    axs[4].plot(timestamps, velocities_z, label="Velocities_z", color='blue')
     axs[4].set_xlabel("Timestamps")
     axs[4].set_ylabel("Derivative_F (Z)")
     axs[4].legend()
     axs[4].grid(True)
+
+    axs[5].plot(timestamps, acceleration_z, label="Acceleration (Z-axis)", color='blue')
+    axs[5].set_xlabel("Timestamps")
+    axs[5].set_ylabel("Acceleration (Z)")
+    axs[5].legend()
+    axs[5].grid(True)
+
+    axs[6].plot(timestamps, delta, label="F/vel (Z-axis)", color='blue')
+    axs[6].set_xlabel("Timestamps")
+    axs[6].set_ylabel("F/vel (Z)")
+    axs[6].legend()
+    axs[6].grid(True)
 
     plt.tight_layout()
     plt.show()
