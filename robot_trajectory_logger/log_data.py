@@ -1,11 +1,12 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Wrench, Pose
-from sensor_msgs.msg import JointState  # Replace with correct message type for franka_robot_state
+from sensor_msgs.msg import JointState # Replace with correct message type for franka_robot_state
 from franka_msgs.msg import FrankaRobotState
 from messages_fr3.srv import PlannerService
-from messages_fr3.msg import JacobianEE
+from messages_fr3.msg import JacobianEE, JointEEState
 from std_srvs.srv import Trigger
+from std_msgs.msg import Float64
 import numpy as np
 import json
 from datetime import datetime
@@ -71,8 +72,20 @@ class RobotTrajectoryLogger(Node):
         # Subscribe to JacobianEE
         self.jacobianEE_subscription = self.create_subscription(
             JacobianEE,
-            'cartesian_impedance_control/jacobianEE',
+            '/jacobianEE',
             self.jacobianEE_callback,
+            10)
+        
+        """ self.joint_z_acceleration_subscription = self.create_subscription(
+            JointEEState,
+            '/jointEEState',
+            self.joint_z_acceleration_callback,
+            10) """
+        
+        self.dt_fext_z_subscription = self.create_subscription(
+            Float64,
+            '/dt_fext_z',
+            self.dt_fext_z_callback,
             10)
         
 
@@ -93,6 +106,8 @@ class RobotTrajectoryLogger(Node):
         self.jacobianEE = None
         self.dtjacobianEE = None
         self.joint_velocities = None
+        self.joint_z_acceleration = 0.0
+        self.dt_Fext_z = 0.0
 
         self.logging_active = False
 
@@ -149,6 +164,12 @@ class RobotTrajectoryLogger(Node):
         self.jacobianEE = msg.jacobianee
         self.dtjacobianEE = msg.dtjacobianee
 
+    def dt_fext_z_callback(self, msg: Float64):
+        self.dt_Fext_z = msg.data
+
+    """ def joint_z_acceleration_callback(self, msg: JointEEState):
+        self.joint_z_acceleration = msg.jointzacceleration """
+    
     def log_data(self):
         if not self.logging_active:
             return
@@ -206,6 +227,7 @@ class RobotTrajectoryLogger(Node):
             "measured_joint_velocities": joint_velocities_data,
             "jacobianEE": jacobianEE_data,
             "dtjacobianEE": dtjacobianEE_data,
+            "dt_Fext_z": self.dt_Fext_z
         }
 
         # Log data to file

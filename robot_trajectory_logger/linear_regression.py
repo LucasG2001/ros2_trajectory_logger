@@ -49,6 +49,7 @@ def extract_data(data):
     joint_velocities = [] 
     jacobianEE = []
     dtjacobianEE = []
+    dtFextz = []
 
     for entry in data:
         # Extract force data
@@ -81,6 +82,9 @@ def extract_data(data):
         ee_orientations['pitch'].append(entry['ee_pose']['orientation']['pitch'])
         ee_orientations['yaw'].append(entry['ee_pose']['orientation']['yaw'])
 
+        # Extract dtFextz
+        dtFextz.append(entry['dt_Fext_z'])
+
         # # Extract joint velocities
         # joint_velocities.append(entry['measured_joint_velocities'])
 
@@ -101,7 +105,7 @@ def extract_data(data):
         # else:
         #     dtjacobianEE.append(np.zeros((6, 7)))  # Corrected syntax
 
-    return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations
+    return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations,dtFextz
 
 def perform_linear_regression(x, F_ext):
     """
@@ -207,11 +211,11 @@ def plot_force_fft(data, sampling_rate):
 
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2024_11_01_1818.json'
+    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2024_11_14_1331_5500_ts_0.01.json'
     
     # Load and process the log file
     data = load_log_file(logfile)
-    timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations = extract_data(data)
+    timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFextz = extract_data(data)
 
     # Convert lists to numpy arrays for further processing
     force_z = np.array(forces['z'])
@@ -328,9 +332,9 @@ if __name__ == "__main__":
     axs[5].legend()
     axs[5].grid(True)
 
-    axs[6].plot(timestamps, delta, label="F/vel (Z-axis)", color='blue')
+    axs[6].plot(timestamps, dtFextz, label="F_ext_dt (Z-axis)", color='blue')
     axs[6].set_xlabel("Timestamps")
-    axs[6].set_ylabel("F/vel (Z)")
+    axs[6].set_ylabel("F_ext_dt")
     axs[6].legend()
     axs[6].grid(True)
 
