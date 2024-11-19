@@ -88,6 +88,17 @@ class RobotTrajectoryLogger(Node):
             self.dt_fext_z_callback,
             10)
         
+        self.D_z_subscription = self.create_subscription(
+            Float64,
+            '/D_z',
+            self.D_z_callback,
+            10)
+        
+        self.velocity_error_subscription = self.create_subscription(
+            Float64,
+            '/velocity_error',
+            self.velocity_error_callback,
+            10)
 
         # Initialize state and variables
         self.time_start = time.time()
@@ -108,6 +119,8 @@ class RobotTrajectoryLogger(Node):
         self.joint_velocities = None
         self.joint_z_acceleration = 0.0
         self.dt_Fext_z = 0.0
+        self.D_z = 0.0
+        self.velocity_error = 0.0
 
         self.logging_active = False
 
@@ -170,6 +183,13 @@ class RobotTrajectoryLogger(Node):
     """ def joint_z_acceleration_callback(self, msg: JointEEState):
         self.joint_z_acceleration = msg.jointzacceleration """
     
+    def D_z_callback(self, msg: Float64):
+        self.D_z = msg.data
+
+    def velocity_error_callback(self, msg: Float64):
+        self.velocity_error = msg.data
+
+    
     def log_data(self):
         if not self.logging_active:
             return
@@ -227,7 +247,10 @@ class RobotTrajectoryLogger(Node):
             "measured_joint_velocities": joint_velocities_data,
             "jacobianEE": jacobianEE_data,
             "dtjacobianEE": dtjacobianEE_data,
-            "dt_Fext_z": self.dt_Fext_z
+            "dt_Fext_z": self.dt_Fext_z,
+            "D_z": self.D_z,
+            "velocity_error": self.velocity_error
+
         }
 
         # Log data to file

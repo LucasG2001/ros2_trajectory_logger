@@ -50,6 +50,8 @@ def extract_data(data):
     jacobianEE = []
     dtjacobianEE = []
     dtFextz = []
+    Dz = []
+    vel_error = []
 
     for entry in data:
         # Extract force data
@@ -85,6 +87,12 @@ def extract_data(data):
         # Extract dtFextz
         dtFextz.append(entry['dt_Fext_z'])
 
+        # Extract D_z
+        Dz.append(entry['D_z'])
+
+        # Extract velocity error
+        vel_error.append(entry['velocity_error'])
+
         # # Extract joint velocities
         # joint_velocities.append(entry['measured_joint_velocities'])
 
@@ -105,7 +113,7 @@ def extract_data(data):
         # else:
         #     dtjacobianEE.append(np.zeros((6, 7)))  # Corrected syntax
 
-    return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations,dtFextz
+    return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations,dtFextz, Dz, vel_error
 
 def perform_linear_regression(x, F_ext):
     """
@@ -211,11 +219,11 @@ def plot_force_fft(data, sampling_rate):
 
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2024_11_14_1331_5500_ts_0.01.json'
+    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2024_11_19_1519.json'
     
     # Load and process the log file
     data = load_log_file(logfile)
-    timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFextz = extract_data(data)
+    timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFextz, Dz, vel_error = extract_data(data)
 
     # Convert lists to numpy arrays for further processing
     force_z = np.array(forces['z'])
@@ -306,7 +314,7 @@ if __name__ == "__main__":
     axs[1].legend()
     axs[1].grid(True)
 
-    # Plot the linear regression results (F_h and k for the Z-axis)
+    """ # Plot the linear regression results (F_h and k for the Z-axis)
     axs[2].plot(window_start_timestamps, F_h_z_list, label="F_h (Z-axis)", color='orange')
     axs[2].plot(window_start_timestamps, k_z_list, label="k (Stiffness Z-axis)", color='red')
     axs[2].set_xlabel("Timestamps")
@@ -318,25 +326,40 @@ if __name__ == "__main__":
     axs[3].set_xlabel("Timestamps")
     axs[3].set_ylabel("Derivative_k (Z)")
     axs[3].legend()
+    axs[3].grid(True) """
+
+    axs[2].plot(timestamps, velocities_z, label="Velocities_z", color='blue')
+    axs[2].set_xlabel("Timestamps")
+    axs[2].set_ylabel("Derivative_F (Z)")
+    axs[2].legend()
+    axs[2].grid(True)
+
+    axs[3].plot(timestamps, acceleration_z, label="Acceleration (Z-axis)", color='blue')
+    axs[3].set_xlabel("Timestamps")
+    axs[3].set_ylabel("Acceleration (Z)")
+    axs[3].legend()
     axs[3].grid(True)
 
-    axs[4].plot(timestamps, velocities_z, label="Velocities_z", color='blue')
+    axs[4].plot(timestamps, dtFextz, label="F_ext_dt (Z-axis)", color='blue')
     axs[4].set_xlabel("Timestamps")
-    axs[4].set_ylabel("Derivative_F (Z)")
+    axs[4].set_ylabel("F_ext_dt")
     axs[4].legend()
     axs[4].grid(True)
 
-    axs[5].plot(timestamps, acceleration_z, label="Acceleration (Z-axis)", color='blue')
+    # plottin D_z
+    axs[5].plot(timestamps, Dz, label="Dampening (Z-axis)", color='blue')
     axs[5].set_xlabel("Timestamps")
-    axs[5].set_ylabel("Acceleration (Z)")
+    axs[5].set_ylabel("D_z")
     axs[5].legend()
     axs[5].grid(True)
 
-    axs[6].plot(timestamps, dtFextz, label="F_ext_dt (Z-axis)", color='blue')
+    # plotting velocity error
+    axs[6].plot(timestamps, vel_error, label="Velocity Error", color='blue')
     axs[6].set_xlabel("Timestamps")
-    axs[6].set_ylabel("F_ext_dt")
+    axs[6].set_ylabel("Velocity Error")
     axs[6].legend()
     axs[6].grid(True)
+
 
     plt.tight_layout()
     plt.show()
