@@ -219,7 +219,7 @@ def plot_force_fft(data, sampling_rate):
 
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2024_11_19_1519.json'
+    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2024_11_20_1715.json'
     
     # Load and process the log file
     data = load_log_file(logfile)
@@ -262,31 +262,31 @@ if __name__ == "__main__":
        acceleration_z[i+1] = acceleration_z[i] * 0.9 + 0.1 * acceleration_z[i+1]
 
     # Perform sliding window linear regression for Z axis
-    F_h_z_list, k_z_list = sliding_window_regression(velocities_z, -force_z, window_size, step_size)
+    #F_h_z_list, k_z_list = sliding_window_regression(velocities_z, -force_z, window_size, step_size)
 
     # Get timestamps for the starting points of each sliding window
-    window_start_timestamps = timestamps[:len(F_h_z_list)]  # Make sure it matches the length of F_h_z_list
+    #window_start_timestamps = timestamps[:len(F_h_z_list)]  # Make sure it matches the length of F_h_z_list
 
     #plot_force_fft(k_z_list, sampling_rate)
     
-    k_z_filtered = butter_band_filter(k_z_list, high = 3 , low = 100, fs=sampling_rate, order=2)
+    #k_z_filtered = butter_band_filter(k_z_list, high = 3 , low = 100, fs=sampling_rate, order=2)
 
     # for i in range (0, len(k_z_list)-1):
     #    k_z_list[i+1] = k_z_list[i] * 0.9 + 0.1 * k_z_list[i+1]
 
     # Compute the first derivative
-    k_z_derivative = abs(np.gradient(k_z_filtered))
+    #k_z_derivative = abs(np.gradient(k_z_filtered))
 
     force_derivative = abs(500 * np.diff(force_z, prepend=force_z[1]))
 
     # Assuming your data is stored in 'timestamps' and 'derivative_values'
     # Apply Gaussian filter
     sigma = 25  # You can adjust this value to control the amount of smoothing
-    smoothed_values_k_z_derivate = gaussian_filter(k_z_derivative, sigma=sigma)
+    #smoothed_values_k_z_derivate = gaussian_filter(k_z_derivative, sigma=sigma)
 
     # Ensure both arrays have the same length for plotting
-    window_start_timestamps = window_start_timestamps[:len(k_z_derivative)]
-    k_z_filtered_derivative = k_z_derivative[:len(window_start_timestamps)]
+    #window_start_timestamps = window_start_timestamps[:len(k_z_derivative)]
+    #k_z_filtered_derivative = k_z_derivative[:len(window_start_timestamps)]
     
     # Plot linear regression results alongside position or force data
     fig, axs = plt.subplots(7, 1, figsize=(18, 18), sharex=True)
@@ -296,8 +296,8 @@ if __name__ == "__main__":
     # Clip delta values to be within the range [-1700, 1700]
     delta = np.clip(delta, -1700, 1700)
 
-    k_z_list = np.clip(k_z_list, -2000, 2000)
-    k_z_filtered = np.clip(k_z_filtered, -2000, 2000)
+    #k_z_list = np.clip(k_z_list, -2000, 2000)
+    #k_z_filtered = np.clip(k_z_filtered, -2000, 2000)
 
 
     # Plot the displacement (Z-axis)
