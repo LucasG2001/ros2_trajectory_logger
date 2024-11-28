@@ -6,9 +6,16 @@ from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 from messages_fr3.msg import JointConfig , PoseDirection
 
+# TODO: add joint configuration to desired pose message 
+
 class JointOptimizer(Node):
-    def __init__(self, urdf_path, ee_frame_name, desired_translation, desired_rotation_euler, force_direction):
+    def __init__(self, urdf_path, ee_frame_name):
+        super().__init__('joint_optimizer')
         # Load the robot model and create data for kinematics/dynamics calculations
+        # Define joint limits and initial configuration
+        self.joint_limits_lower = np.array([-2.7437, -1.7837, -2.9007, -3.0421, -2.8065, 0.5445, -3.0159, -0.04, -0.04])
+        self.joint_limits_upper = np.array([2.7437, 1.7837, 2.9007, -0.1518, 2.8065, 4.5169, 3.0159, 0.04, 0.04])
+        self.q0 = np.array([0.33506416, 0.19438218, -0.34938642, -2.4187224, 1.59775894, 1.5097755, -1.34924279, 0., 0.])
         self.model = pin.buildModelFromUrdf(urdf_path)
         self.data = self.model.createData()
         self.ee_frame_id = self.model.getFrameId(ee_frame_name)
@@ -105,30 +112,20 @@ class JointOptimizer(Node):
         desired_rotation_matrix = R.from_euler('xyz', [request.roll, request.pitch, request.yaw]).as_matrix()
         self.desired_pose = pin.SE3(desired_rotation_matrix, np.array([request.x, request.y, request.z]))
         self.f_d = np.array([request.directionx, request.directiony, request.directionz])
+        # Run the optimization
+        self.optimize(self.q0, self.joint_limits_lower, self.joint_limits_upper)
 
-
-
-# Define parameters
-urdf_path = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/fr3.urdf'
-ee_frame_name = 'fr3_hand'
-
-# Initialize the optimizer class
-optimizer = JointOptimizer(urdf_path, ee_frame_name)
-
-# Define joint limits and initial configuration
-joint_limits_lower = np.array([-2.7437, -1.7837, -2.9007, -3.0421, -2.8065, 0.5445, -3.0159, -0.04, -0.04])
-joint_limits_upper = np.array([2.7437, 1.7837, 2.9007, -0.1518, 2.8065, 4.5169, 3.0159, 0.04, 0.04])
-q0 = np.array([0.33506416, 0.19438218, -0.34938642, -2.4187224, 1.59775894, 1.5097755, -1.34924279, 0., 0.])
-
-# Run the optimization
-optimizer.optimize(q0, joint_limits_lower, joint_limits_upper)
+############ END OF CLASS DEFINITION ################################################
 
 def main(args=None):
-    rclpy.init(args=args)
-    node = JointOptimizer()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+        # Define parameters
+        urdf_path = '/home/lucas/franka_ros2_ws/src/ros2_trajectory_logger/fr3.urdf'
+        ee_frame_name = 'fr3_hand'
+        rclpy.init(args=args)
+        node = JointOptimizer(urdf_path, ee_frame_name)
+        rclpy.spin(node)
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':
