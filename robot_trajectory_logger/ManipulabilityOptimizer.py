@@ -6,6 +6,7 @@ from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 from messages_fr3.msg import JointConfig , PoseDirection
 from franka_msgs.msg import FrankaRobotState
+import matplotlib.pyplot as plt
 
 # TODO: add joint configuration to desired pose message 
 
@@ -20,6 +21,8 @@ class JointOptimizer(Node):
         self.model = pin.buildModelFromUrdf(urdf_path)
         self.data = self.model.createData()
         self.ee_frame_id = self.model.getFrameId(ee_frame_name)
+        self.values = []
+    
 
         # initialize self.q0 as an empty std::array<double, 7> 
         self.q0 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
@@ -46,9 +49,11 @@ class JointOptimizer(Node):
         
         # Retrieve the Jacobian in the base frame
         J = pin.getFrameJacobian(self.model, self.data, self.ee_frame_id, pin.ReferenceFrame.LOCAL_WORLD_ALIGNED)
-        
+        value = -np.dot(self.f_d, np.linalg.inv(J @ J.T) @ self.f_d)
+        self.values.append(value)
+        print(value)
         # Objective function value calculation
-        return -np.dot(self.f_d, np.linalg.inv(J @ J.T) @ self.f_d)  # Minimize the negative to maximize the value
+        return value # Minimize the negative to maximize the value
 
     def pose_constraint(self, q):
         # Calculate forward kinematics for pose constraint
@@ -110,6 +115,18 @@ class JointOptimizer(Node):
             print("Maximized objective value:", -result.fun)
         else:
             print("Optimization failed:", result.message)
+
+        plt.plot(self.values, marker='o', linestyle='-', color='b', label='Array values')
+        # Add labels and title
+        plt.title('1D Array Plot')
+        plt.xlabel('Index')
+        plt.ylabel('Value')
+        # Add grid and legend
+        plt.grid(True)
+        plt.legend()
+
+        # Show the plot
+        plt.show()
         
         return result
     
