@@ -22,7 +22,7 @@ setup(
         'console_scripts': [
              'robot_trajectory_logger = robot_trajectory_logger.log_data:main',
              'planner = robot_trajectory_logger.planner:main', 
-                'joint_optimizer = robot_trajectory_logger.ManipulabilityOptimizer:main',
+             'joint_optimizer = robot_trajectory_logger.ManipulabilityOptimizer:main',
         ],
     },
 )
