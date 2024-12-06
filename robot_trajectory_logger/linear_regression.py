@@ -95,26 +95,6 @@ def extract_data(data):
         # Extract velocity error
         vel_error.append(entry['velocity_error'])
 
-        # # Extract joint velocities
-        # joint_velocities.append(entry['measured_joint_velocities'])
-
-        # # Extract jacobianEE
-        # jacobianEE.append(entry['jacobianEE'])
-
-        # # Extract dtjacobianEE
-        # dtjacobianEE.append(entry['dtjacobianEE'])
-
-        # # Convert Jacobian arrays to (6,7) matrices
-        # if entry['jacobianEE']:
-        #     jacobianEE.append(np.array(entry['jacobianEE']).reshape(6, 7))
-        # else:
-        #     jacobianEE.append(np.zeros((6, 7)))  # Corrected syntax
-
-        # if entry['dtjacobianEE']:
-        #     dtjacobianEE.append(np.array(entry['dtjacobianEE']).reshape(6, 7))
-        # else:
-        #     dtjacobianEE.append(np.zeros((6, 7)))  # Corrected syntax
-
     return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations,dtFextz, Dz, vel_error
 
 def perform_linear_regression(x, F_ext):
@@ -230,28 +210,12 @@ if __name__ == "__main__":
     # Convert lists to numpy arrays for further processing
     force_z = np.array(forces['z'])
     displacement_z = np.array(ee_positions['z'])
-    # joint_velocities = np.array(joint_velocities)
-    # jacobianEE = np.array(jacobianEE)
-    # dtjacobianEE = np.array(dtjacobianEE)
 
     sampling_rate = 500  # 500 Hz update rate
 
     # Define window size (40 measurements) and step size (you can use 40 for non-overlapping)
     window_size = 3  # Number of measurements per window
     step_size = 1    # Move 40 points at a time (non-overlapping)
-
-    # # Filter the joint velocity
-    # filtered_joint_velocities = np.array([
-    # butter_lowpass_filter(joint_velocities[:, i], cutoff = 1 , fs=sampling_rate, order=2)
-    # for i in range(joint_velocities.shape[1])
-    # ]).T
-
-    # filtered_joint_accelerations = 100 * np.diff(filtered_joint_velocities, axis=0, prepend=filtered_joint_velocities[0:1, :])
-    # # a_ee = dot(J) * filtered_joint_velocities + J * filtered_joint_accelerations
-    # a_ee = np.einsum('ijk,ik->ij', dtjacobianEE, filtered_joint_velocities) + np.einsum('ijk,ik->ij', jacobianEE, filtered_joint_accelerations)
-
-    # # Step 5: Extract the Z component (third row) of the end-effector acceleration
-    # z_acceleration_end_effector = a_ee[:, 2]
 
     velocities_z = 500 * np.diff(ee_positions['z'], prepend=ee_positions['z'][1])
      # low pass filter
@@ -263,43 +227,15 @@ if __name__ == "__main__":
     for i in range (0, len(acceleration_z)-1):
        acceleration_z[i+1] = acceleration_z[i] * 0.9 + 0.1 * acceleration_z[i+1]
 
-    # Perform sliding window linear regression for Z axis
-    #F_h_z_list, k_z_list = sliding_window_regression(velocities_z, -force_z, window_size, step_size)
-
-    # Get timestamps for the starting points of each sliding window
-    #window_start_timestamps = timestamps[:len(F_h_z_list)]  # Make sure it matches the length of F_h_z_list
-
-    #plot_force_fft(k_z_list, sampling_rate)
-    
-    #k_z_filtered = butter_band_filter(k_z_list, high = 3 , low = 100, fs=sampling_rate, order=2)
-
-    # for i in range (0, len(k_z_list)-1):
-    #    k_z_list[i+1] = k_z_list[i] * 0.9 + 0.1 * k_z_list[i+1]
-
-    # Compute the first derivative
-    #k_z_derivative = abs(np.gradient(k_z_filtered))
 
     force_derivative = abs(500 * np.diff(force_z, prepend=force_z[1]))
 
-    # Assuming your data is stored in 'timestamps' and 'derivative_values'
-    # Apply Gaussian filter
-    sigma = 25  # You can adjust this value to control the amount of smoothing
-    #smoothed_values_k_z_derivate = gaussian_filter(k_z_derivative, sigma=sigma)
-
-    # Ensure both arrays have the same length for plotting
-    #window_start_timestamps = window_start_timestamps[:len(k_z_derivative)]
-    #k_z_filtered_derivative = k_z_derivative[:len(window_start_timestamps)]
-    
-    # Plot linear regression results alongside position or force data
     fig, axs = plt.subplots(7, 1, figsize=(18, 18), sharex=True)
 
     delta = -force_z / velocities_z
 
     # Clip delta values to be within the range [-1700, 1700]
     delta = np.clip(delta, -1700, 1700)
-
-    #k_z_list = np.clip(k_z_list, -2000, 2000)
-    #k_z_filtered = np.clip(k_z_filtered, -2000, 2000)
 
 
     # Plot the displacement (Z-axis)
@@ -364,43 +300,5 @@ if __name__ == "__main__":
 
 
     plt.tight_layout()
-    plt.show()
-
-    # Step 1: Compute mean and standard deviation for dtFextz
-    mean_dtFextz = np.mean(dtFextz)
-    std_dtFextz = np.std(dtFextz)
-
-    # Dynamically set the confidence level
-    confidence_level = 0.90  # Example: 95% one-sided confidence
-
-    # Calculate z-score for the one-sided confidence level
-    z = norm.ppf(1 - confidence_level)  # Use scipy.stats.norm.ppf
-    upper_threshold = mean_dtFextz + z * std_dtFextz
-
-    # Step 3: Identify outliers (values above the upper threshold)
-    outliers = [(i, value) for i, value in enumerate(dtFextz) if value < upper_threshold]
-
-    # Print outliers
-    print(f"Outliers detected above the upper threshold: {len(outliers)}")
-    for index, value in outliers:
-        print(f"Outlier at index {index}: {value}")
-
-    # Step 4: Visualization
-    plt.figure(figsize=(12, 6))
-    plt.plot(timestamps, dtFextz, label="dtFextz", color='blue')
-
-    # Plot upper threshold
-    plt.axhline(upper_threshold, color='red', linestyle='--', label="Upper Threshold (95%)")
-
-    # Highlight outliers
-    outlier_timestamps = [timestamps[i] for i, _ in outliers]
-    outlier_values = [value for _, value in outliers]
-    plt.scatter(outlier_timestamps, outlier_values, color='orange', label="Outliers", zorder=5)
-
-    plt.title("Upper One-Sided Confidence Interval in dtFextz")
-    plt.xlabel("Timestamps")
-    plt.ylabel("dtFextz")
-    plt.legend()
-    plt.grid(True)
     plt.show()
 
