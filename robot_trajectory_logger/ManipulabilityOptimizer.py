@@ -83,7 +83,7 @@ class JointOptimizer(Node):
             q0, 
             constraints=constraints,
             bounds=bounds,
-            method='SLSQP',  
+            method='SLSQP',
             options={'maxiter': max_iterations, 'disp': True}
         )
         
@@ -113,6 +113,7 @@ class JointOptimizer(Node):
             print("Optimal EE position:", position)
             print("Optimal EE orientation (Euler angles):", euler_angles)
             print("Maximized objective value:", -result.fun)
+            print("Number of iterations:", result.nit)
         else:
             print("Optimization failed:", result.message)
 

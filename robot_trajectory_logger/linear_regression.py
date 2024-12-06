@@ -5,6 +5,8 @@ from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import Ridge
 from scipy.signal import butter, filtfilt
 from scipy.ndimage import gaussian_filter
+from scipy.stats import norm
+
 
 def load_log_file(filename):
     """
@@ -219,7 +221,7 @@ def plot_force_fft(data, sampling_rate):
 
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2024_11_20_1715.json'
+    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2024_12_03_1501_med_drill_sample.json'
     
     # Load and process the log file
     data = load_log_file(logfile)
@@ -363,3 +365,42 @@ if __name__ == "__main__":
 
     plt.tight_layout()
     plt.show()
+
+    # Step 1: Compute mean and standard deviation for dtFextz
+    mean_dtFextz = np.mean(dtFextz)
+    std_dtFextz = np.std(dtFextz)
+
+    # Dynamically set the confidence level
+    confidence_level = 0.90  # Example: 95% one-sided confidence
+
+    # Calculate z-score for the one-sided confidence level
+    z = norm.ppf(1 - confidence_level)  # Use scipy.stats.norm.ppf
+    upper_threshold = mean_dtFextz + z * std_dtFextz
+
+    # Step 3: Identify outliers (values above the upper threshold)
+    outliers = [(i, value) for i, value in enumerate(dtFextz) if value < upper_threshold]
+
+    # Print outliers
+    print(f"Outliers detected above the upper threshold: {len(outliers)}")
+    for index, value in outliers:
+        print(f"Outlier at index {index}: {value}")
+
+    # Step 4: Visualization
+    plt.figure(figsize=(12, 6))
+    plt.plot(timestamps, dtFextz, label="dtFextz", color='blue')
+
+    # Plot upper threshold
+    plt.axhline(upper_threshold, color='red', linestyle='--', label="Upper Threshold (95%)")
+
+    # Highlight outliers
+    outlier_timestamps = [timestamps[i] for i, _ in outliers]
+    outlier_values = [value for _, value in outliers]
+    plt.scatter(outlier_timestamps, outlier_values, color='orange', label="Outliers", zorder=5)
+
+    plt.title("Upper One-Sided Confidence Interval in dtFextz")
+    plt.xlabel("Timestamps")
+    plt.ylabel("dtFextz")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
