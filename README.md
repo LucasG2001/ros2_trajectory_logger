@@ -1,7 +1,7 @@
 # ros2_trajectory_logging
 
 # Python Scripts
-filters.py - filter functions used throughout the package. Implements fourier-spectrum based hyperparameter estimation for Gaussian processes.
+filters.py - filter functions used throughout the package. Implements fourier-spectrum based hyperparameter estimation for Gaussian processes. Implements Real-Time Autocorrelation.
 hyperparams_from_fourier.py - implements an example to compare hyperparameter tuning based on frequency spectrum and marginal likelihood maximization
 gaussian_on_slices.py - implements static GP regression on a dataset or slice of it
 GP_regression.py - implements various functions to simulate a RT GP-fitting process. Main testing script.
