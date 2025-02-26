@@ -425,7 +425,7 @@ def plot_phase_distortion(w, phase_response, fs):
 
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2024_11_12_1020.json'
+    logfile = 'normal_bone/robot_state_log_2025_02_04_0818.json'
 
     # Load and process the log file
     data = load_log_file(logfile)
