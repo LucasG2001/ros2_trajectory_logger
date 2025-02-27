@@ -54,6 +54,7 @@ def extract_data(data):
     dtFextz = []
     Dz = []
     vel_error = []
+    f_ext_desired = []
 
     for entry in data:
         # Extract force data
@@ -95,7 +96,10 @@ def extract_data(data):
         # Extract velocity error
         vel_error.append(entry['velocity_error'])
 
-    return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations,dtFextz, Dz, vel_error
+        # Extract f_ext_desired
+        f_ext_desired.append(entry['f_ext_desired'])
+
+    return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations,dtFextz, Dz, vel_error, f_ext_desired
 
 def perform_linear_regression(x, F_ext):
     """
@@ -205,7 +209,7 @@ if __name__ == "__main__":
     
     # Load and process the log file
     data = load_log_file(logfile)
-    timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFextz, Dz, vel_error = extract_data(data)
+    timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFextz, Dz, vel_error, f_ext_desired = extract_data(data)
 
     # Convert lists to numpy arrays for further processing
     force_z = np.array(forces['z'])
@@ -245,8 +249,8 @@ if __name__ == "__main__":
     axs[0].legend()
     axs[0].grid(True)
 
-    # Plot the filtered force (Z-axis)
-    axs[1].plot(timestamps, force_z, label="Force (Z-axis)", color='green')
+    # Plot the filtered force (desired-axis)
+    axs[1].plot(timestamps, f_ext_desired, label="Force (desired)", color='green')
     axs[1].set_xlabel("Timestamps")
     axs[1].set_ylabel("Force (Z)")
     axs[1].legend()
@@ -278,7 +282,7 @@ if __name__ == "__main__":
     axs[3].legend()
     axs[3].grid(True)
 
-    axs[4].plot(timestamps, dtFextz, label="F_ext_dt (Z-axis)", color='blue')
+    axs[4].plot(timestamps, dtFextz, label="F_ext_dt (desired)", color='blue')
     axs[4].set_xlabel("Timestamps")
     axs[4].set_ylabel("F_ext_dt")
     axs[4].legend()
