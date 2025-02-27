@@ -88,6 +88,12 @@ class RobotTrajectoryLogger(Node):
             self.dt_fext_z_callback,
             10)
         
+        self.fext_desired_subscription = self.create_subscription(
+            Float64,
+            '/fext_desired',
+            self.fext_desired_callback,
+            10)
+        
         self.D_z_subscription = self.create_subscription(
             Float64,
             '/D_z',
@@ -121,6 +127,7 @@ class RobotTrajectoryLogger(Node):
         self.dt_Fext_z = 0.0
         self.D_z = 0.0
         self.velocity_error = 0.0
+        self.f_ext_desired = 0.0
 
         self.logging_active = False
 
@@ -179,6 +186,9 @@ class RobotTrajectoryLogger(Node):
 
     def dt_fext_z_callback(self, msg: Float64):
         self.dt_Fext_z = msg.data
+    
+    def fext_desired_callback(self, msg: Float64):
+        self.f_ext_desired = msg.data
 
     """ def joint_z_acceleration_callback(self, msg: JointEEState):
         self.joint_z_acceleration = msg.jointzacceleration """
@@ -249,7 +259,8 @@ class RobotTrajectoryLogger(Node):
             "dtjacobianEE": dtjacobianEE_data,
             "dt_Fext_z": self.dt_Fext_z,
             "D_z": self.D_z,
-            "velocity_error": self.velocity_error
+            "velocity_error": self.velocity_error,
+            "f_ext_desired": self.f_ext_desired
 
         }
 
