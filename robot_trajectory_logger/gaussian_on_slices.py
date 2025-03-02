@@ -42,7 +42,7 @@ def fit_gaussian_gp(data: np.ndarray, n_window: int = 25, optimize: bool = True)
          model = GPy.models.GPRegression(X, Y, kernel)
     else:
         # Compute length scale from FFT
-        l = compute_length_scale_from_fft_windowed(data, sc=5, fs=500, plot=True)
+        l = compute_length_scale_from_fft_windowed(data, sc=50, fs=500, plot=True)
         l = np.sqrt(l)
         kernel = GPy.kern.RBF(input_dim=n_window, variance=1.0, lengthscale=l)
         model = GPy.models.GPRegression(X, Y, kernel, noise_var=0.03)

@@ -7,8 +7,7 @@ from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKern
 from filters import ema_filter, moving_average_filter, normalize_array, compute_and_plot_stft, real_time_outlier_detection, plot_real_time_outliers, plot_spectral_intensity
 from RTBandPassFilter import RealTimeBandpassFilter
 from linear_regression import extract_data
-from scipy.signal import spectrogram, stft
-from spike_detection import z_score_spike_detection
+from scipy.signal import spectrogram, stft, butter, freqz, lfilter
 
 """
 implements spike detector class to save and operate on dtill data
@@ -138,3 +137,104 @@ class SpikeDetector:
 
         plt.tight_layout()
         plt.show()
+
+    def plot_frequency_bands_over_time(self, signal, window_size=1.0, overlap=0.5):
+        """
+        Computes and plots the percentage contribution of different frequency bands over time,
+        along with the original signal in a subplot.
+        Parameters:
+        - signal: array-like, the input time-domain signal.
+        - window_size: float, duration of each STFT window in seconds (default = 1.0s).4
+        - overlap: float, overlap fraction between windows (default = 50%).
+        """
+        # Ensure signal is a NumPy array
+        signal = np.asarray(signal)
+        # Define frequency bands
+        bands = {"0-5 Hz": (0, 5), "5-25 Hz": (5, 25), "25-50 Hz": (25, 50), "50-250 Hz": (50, 250)}
+        # Compute STFT
+        nperseg = int(window_size * self.fs)  # Convert window size from seconds to samples
+        noverlap = int(overlap * nperseg)  # Overlap in samples
+        f, t, Zxx = stft(signal, self.fs, nperseg=nperseg, noverlap=noverlap, window='boxcar')
+        # Compute energy in each frequency band
+        band_energies = {}
+        for band_name, (f_low, f_high) in bands.items():
+            band_mask = (f >= f_low) & (f <= f_high)
+            band_energies[band_name] = np.sum(np.abs(Zxx[band_mask, :])**2, axis=0)  # Compute total energy in band
+        # Convert energy to percentage contribution at each time step
+        total_energy = np.sum(list(band_energies.values()), axis=0)  # Sum energy across all bands
+        for band_name in band_energies.keys():
+            band_energies[band_name] = (band_energies[band_name] / total_energy) * 100  # Convert to percentage
+        # Create subplots
+        fig, ax = plt.subplots(2, 1, figsize=(10, 7), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+        # Plot frequency band percentage contributions (Top Plot)
+        for band_name, energy_percent in band_energies.items():
+            ax[0].plot(t, energy_percent, label=band_name)
+            ax[0].set_ylabel("Percentage Contribution (%)")
+            ax[0].set_title("Frequency Band Contribution Over Time")
+            ax[0].legend()
+            ax[0].grid()
+            # Plot original signal (Bottom Plot)
+            time_axis = np.arange(len(signal)) / self.fs
+            ax[1].plot(time_axis, signal, color='black', alpha=0.7)
+            ax[1].set_xlabel("Time (s)")
+            ax[1].set_ylabel("Amplitude")
+            ax[1].set_title("Original Signal")
+            ax[1].grid()
+        # Show plot
+        plt.tight_layout()
+        plt.show()
+
+
+    def causal_lowpass_filter(self, data, cutoff, order=3, plot=True):
+        """
+        Applies a causal low-pass Butterworth filter to a signal.
+
+        Parameters:
+        - data: array-like, input time-domain data.
+        - fs: float, sampling frequency (Hz).
+        - cutoff: float, cutoff frequency (Hz).
+        - order: int, order of the Butterworth filter (default = 4).
+        - plot: bool, whether to plot the frequency response and filtered signal.
+
+        Returns:
+        - filtered_signal: array, the filtered output signal.
+        """
+
+        # Normalize the cutoff frequency (relative to Nyquist frequency)
+        nyquist = 0.5 * self.fs
+        normalized_cutoff = cutoff / nyquist
+
+        # Design a Butterworth low-pass filter
+        b, a = butter(order, cutoff, btype='low', analog=False, fs=self.fs)
+
+        # Apply the filter in a causal way (one-pass forward filtering)
+        filtered_signal = lfilter(b, a, data)
+
+        # Plot frequency response & filtered signal if requested
+        if plot:
+            w, h = freqz(b, a, worN=8000)  # Frequency response
+            plt.figure(figsize=(10, 4))
+
+            # Plot Frequency Response
+            plt.subplot(1, 2, 1)
+            plt.plot((self.fs * 0.5 / np.pi) * w, abs(h), 'b')
+            plt.axvline(cutoff, color='r', linestyle='--', label="Cutoff")
+            plt.title("Filter Frequency Response")
+            plt.xlabel("Frequency (Hz)")
+            plt.ylabel("Gain")
+            plt.legend()
+            plt.grid()
+
+            # Plot Signal Before and After Filtering
+            plt.subplot(1, 2, 2)
+            plt.plot(data, label="Original Signal", alpha=0.6)
+            plt.plot(filtered_signal, label="Filtered Signal", linewidth=2)
+            plt.title("Signal Before & After Filtering")
+            plt.xlabel("Samples")
+            plt.legend()
+            plt.grid()
+
+            plt.tight_layout()
+            plt.show()
+
+        return filtered_signal

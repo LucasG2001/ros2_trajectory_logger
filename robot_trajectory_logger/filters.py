@@ -104,6 +104,9 @@ def compute_length_scale_example(freq = 1, fs=500):
     print(f"Computed Length Scale: {l:.4f}")
 
 def real_time_autocorrelation(signal: np.ndarray, fs: float, window_size: int):
+    #TODO fix autocorrelation function
+    #TODO write unit tests
+    #TODO it shouls probably not contain the whole signal until time t but a part of it
     """
     Simulates real-time streaming of a time-series signal,
     computing and plotting the autocorrelation over time.
@@ -114,18 +117,27 @@ def real_time_autocorrelation(signal: np.ndarray, fs: float, window_size: int):
     - window_size: int : Window size for computing autocorrelation (samples)
     """
     autocorr_values = []
-    time_axis = np.arange(len(signal)) / fs
+    n = len(signal)
+    time_axis = np.arange(n) / fs
+   
     
-    for i in range(window_size, len(signal)):
-        window = signal[i-window_size:i]
-        autocorr = np.correlate(window, window, mode='full')
-        autocorr = autocorr[len(autocorr)//2:]  # Keep only the positive lags
-        autocorr_values.append(autocorr[0])  # Store only the zero-lag autocorrelation
+    for i in range(window_size + 1, n):
+        observed_signal = signal[window_size : i]
+        shifted_signal = signal[0: i - window_size]
+        var = np.var(observed_signal) * np.var(shifted_signal)
+        print("var", var)  
+        if var <= 0.001:
+            autocorr_values.append(1.0)  # var = 0 is either constant signal or first measurement
+        else:
+            autocorr = np.correlate(observed_signal - np.mean(observed_signal), shifted_signal-np.mean(shifted_signal), mode='full') / (n * var) #normalization
+            autocorr = autocorr[len(autocorr)//2:]  # Keep only the positive lags
+            autocorr_values.append(autocorr[0])  # Store only the zero-lag autocorrelation
     
  # Plot results
+    
     fig, ax = plt.subplots(2, 1, figsize=(10, 8))
     
-    ax[0].plot(time_axis[window_size:], autocorr_values, label='Autocorrelation', color='red')
+    ax[0].plot(time_axis[window_size + 1:], autocorr_values, label='Autocorrelation'+ " " + "Window = "+str(window_size), color='red')
     ax[0].set_xlabel('Time (s)')
     ax[0].set_ylabel('Autocorrelation')
     ax[0].legend()

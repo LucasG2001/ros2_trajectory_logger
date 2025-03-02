@@ -19,7 +19,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 from time import time
 import GPy
-from robot_trajectory_logger.gaussian_on_slices import fit_gaussian_gp
+from gaussian_on_slices import fit_gaussian_gp
 
 def perform_gp_self_correlation_sklearn(f_magnitude, passband=(10, 50), sampling_frequency=500):
     """
@@ -28,27 +28,25 @@ def perform_gp_self_correlation_sklearn(f_magnitude, passband=(10, 50), sampling
 
     """
     # Parameters
-    window_size = 25  # Sliding window size
-    refit_interval = 2  # Refit every 10 iterations
+    window_size = 100  # Sliding window size
+    refit_interval = 50  # Refit every 10 iterations
     y_data = np.hstack([np.zeros(window_size + 1), f_magnitude]) # prepend y_data for fitting
     n_points = len(y_data)
-    X_train = np.zeros([refit_interval, window_size]) # n_samples x n_features
-    y_train = np.zeros([refit_interval, window_size]) # n_samples x n_targets
+    X_train = np.zeros([1, window_size]) # n_samples x n_features
+    y_train = np.zeros([1, window_size]) # n_samples x n_targets
     print("shape of y data is ", y_data.shape)
     
     # Storage for predictions
     means = np.zeros(n_points)
-    sigmas = np.ones(n_points)
+    sigmas = np.ones(n_points) * 0.5
     anomalies = []
     times = []
 
     # Define GP kernel
     kernel = (
-        C(1.0, constant_value_bounds="fixed") * RBF(length_scale=np.ones(window_size)* 1, length_scale_bounds="fixed") 
-        + C(0.1, (0.001, 1))
-    )
+        C(1.0, constant_value_bounds="fixed") * RBF(length_scale=np.ones(window_size)* 1, length_scale_bounds="fixed"))
     
-    gp = GaussianProcessRegressor(kernel=kernel, alpha=0.01, n_restarts_optimizer=3, normalize_y=False)
+    gp = GaussianProcessRegressor(kernel=kernel, alpha=0.01, n_restarts_optimizer=5, normalize_y=False)
     
     print("Initial hyperparameters:\n", gp.get_params())
 
@@ -58,7 +56,7 @@ def perform_gp_self_correlation_sklearn(f_magnitude, passband=(10, 50), sampling
         start_time = time()
         # Construct feature vector: last `window_size` points
         feature_vector = y_data[i -window_size-1 : i-1].reshape(1, -1)
-        l1 = compute_length_scale_from_fft(y_data[:i-1], sampling_frequency, sc = 5, plot = False)
+        l1 = compute_length_scale_from_fft(y_data[:i], sampling_frequency, sc = 5, plot = False)
         l = l1
         # Predict next sequence
         y_pred, y_std = gp.predict(feature_vector, return_std=True)
@@ -69,26 +67,22 @@ def perform_gp_self_correlation_sklearn(f_magnitude, passband=(10, 50), sampling
         if y_data[i] < lower_bound or y_data[i] > upper_bound:
             anomalies.append(i)
 
-        # Store training data in buffer
-        buffer_X = y_data[i - window_size - 1:i - 1]  # Features from `i-window-1` to `i-1`
-        buffer_y = y_data[i - window_size:i]  # Labels from `i-window` to `i`
-        X_train[i%refit_interval, :] = buffer_X # Shape: (n_samples, window_size)
-        y_train[i%refit_interval, :] = buffer_y  # Shape: (n_samples, window_size)
-        # Ensure the buffer is correctly shaped for GP training
-        if i % refit_interval == 0 and len(buffer_X) >= refit_interval:
+        if i % refit_interval == 0:
+            X_train = np.vstack([X_train, feature_vector]) # Shape: (n_samples, window_size)
+            y_train = np.vstack([y_train, y_data[i - window_size: i]])  # Shape: (n_samples, window_size)
             # Convert buffer to NumPy arrays (stacked feature vectors)
-           
             # Compute the prior mean before fitting
             #prior_mean, _ = gp.predict(X_train, return_std=True)
             # print("Prior Mean (before training):\n", prior_mean)
             # Train GP on stacked data
-            gp.set_params(kernel__k1__k2__length_scale=np.ones(window_size)*l)
-            gp.set_params(kernel__k1__k1__constant_value=np.std(y_train))
-            #gp.set_params(kernel__k2__length_scale=np.ones(window_size)*l)
-            #gp.set_params(kernel__k1__constant_value=np.var(y_train)*1000)
+            # gp.set_params(kernel__k1__k2__length_scale=np.ones(window_size)*l)
+            # gp.set_params(kernel__k1__k1__constant_value=np.std(y_train))
+            gp.set_params(kernel__k2__length_scale=np.ones(window_size)*l)
+            gp.set_params(kernel__k1__constant_value=1)
             # Print updated hyperparameters
+            #fit with subsampled points
             # print("\nUpdated hyperparameters:\n", gp.get_params())
-            gp.fit(X_train, y_train) # without normalize_y = True this will always assume a zero-mean prior
+            gp.fit(X_train[::1], y_train[::1]) # without normalize_y = True this will always assume a zero-mean prior
             # Compute the posterior mean after fitting
             #posterior_mean, _ = gp.predict(X_train, return_std=True)
             #print("Posterior Mean (after training):\n", posterior_mean)
@@ -261,36 +255,42 @@ if __name__ == "__main__":
             print(f"Processing file: {file_path}")
         # Load data
         spike_detector = SpikeDetector(file_path, fs=sampling_frequency, time_window=cutoff_time, passband=passband) # read out metrics
-        #spike_detector.plot_metrics()
+        # spike_detector.plot_metrics()
+        # spike_detector.causal_lowpass_filter(spike_detector.drilling_force, cutoff=3.0, order=4)
+        # spike_detector.plot_frequency_bands_over_time(spike_detector.drilling_force, window_size=0.1, overlap=0.95)
+        # spike_detector.plot_frequency_bands_over_time(spike_detector.drilling_force, window_size=0.1, overlap=0.95)
         # real_time_autocorrelation(spike_detector.drilling_force, fs=spike_detector.fs, window_size=10)
 
         # compute_and_plot_stft(spike_detector.velocities, spike_detector.fs)
 
-        # plt.plot(spike_detector.spectral_intensity, color = "blue")5
+        # plt.plot(spike_detector.spectral_intensity, color = "blue"3)5
         # plt.scatter(indices, spike_detector.spectral_intensity[indices], color="red", label="Outliers", s=10, zorder=3)
         f_magnitude = spike_detector.drilling_force
         positions = spike_detector.displacement
         velocities = spike_detector.velocities  
         # Perform GP regression
         #plot_moving_averages(f_magnitude)
-        # means, sigmas = perform_gp_self_correlation(f_magnitude, passband, sampling_frequency)
-        slice = 20
-        """
-        apply a GP regression with GPY once based on optimization based method and once based on the fourier transform
-        """
-        for i in range(slice):
-            n = len(f_magnitude)
-            print(np.shape(f_magnitude))
-            min_index = np.min([0, i * n//slice])
-            max_index = np.min([(i + 1) * n//slice, n-1])
-            # TODO: Why does it not fit when length scale is fixed?
-            # THE PROBLEM IS COMPUTING VARIANCE/SUM TERM BUT IT IS NOT CLEAR WHY OR IF WE CAN JUST USE 1 INSTEAD
-            # plot_frequency_bands_over_time(f_magnitude[min_index:max_index], sampling_frequency)
-            _ = fit_gaussian_gp(f_magnitude[min_index:max_index], n_window=80, optimize=True) # optimized model
-            _ = fit_gaussian_gp(f_magnitude[min_index:max_index], n_window=80, optimize=False) # fixed model
+        # means, sigmas = perform_gp_self_correlation_sklearn(f_magnitude, passband, sampling_frequency)
+        real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=1000)
+        real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=1)
+        # real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=1000)
+        #slice = 20
+        #"""
+        #apply a GP regression with GPY once based on optimization based method and once based on the fourier transform
+        #"""
+        #for i in range(slice):
+        #    n = len(f_magnitude)
+        #    print(np.shape(f_magnitude))
+        #    min_index = np.min([0, i * n//slice])
+        #    max_index = np.min([(i + 1) * n//slice, n-1])
+        #    # TODO: Why does it not fit when length scale is fixed?
+        #    # THE PROBLEM IS COMPUTING VARIANCE/SUM TERM BUT IT IS NOT CLEAR WHY OR IF WE CAN JUST USE 1 INSTEAD
+        #    # plot_frequency_bands_over_time(f_magnitude[min_index:max_index], sampling_frequency)
+        #    _ = fit_gaussian_gp(f_magnitude[min_index:max_index], n_window=100, optimize=True) # optimized model
+        #    _ = fit_gaussian_gp(f_magnitude[min_index:max_index], n_window=100, optimize=False) # fixed model
 
-        l = compute_length_scale_from_fft(f_magnitude, sampling_frequency)
-        print("l is ", l)
+        #l = compute_length_scale_from_fft(f_magnitude, sampling_frequency)
+        #print("l is ", l)
         # print("size of indices is ", len(indices))
         # Perform GP regression
         
