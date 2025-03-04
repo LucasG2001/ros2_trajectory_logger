@@ -245,11 +245,11 @@ def plot_moving_averages(f_magnitude):
 # Main Execution
 if __name__ == "__main__": 
     folder_path = "med_drill_data"
-    sampling_frequency = 500    
+    sampling_frequency = 1000    
     cutoff_time = 4.5
     passband = (10, 50)
    
-    for filename in os.listdir(folder_path): # ["robot_state_log_2024_12_05_1323.json"]
+    for filename in os.listdir(folder_path):
         file_path = os.path.join(folder_path, filename)
         if os.path.isfile(file_path):  # Ensure it's a file
             print(f"Processing file: {file_path}")
@@ -271,9 +271,14 @@ if __name__ == "__main__":
         # Perform GP regression
         #plot_moving_averages(f_magnitude)
         # means, sigmas = perform_gp_self_correlation_sklearn(f_magnitude, passband, sampling_frequency)
-        real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=1000)
-        real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=1)
-        # real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=1000)
+        # TODO: EXTRACT SHIFTED AUTOCORRELATION AT EACH STEP AND FIT GAUSSIAN WITH RBF + WHITE NOISE KERNEL
+        # TODO: THEN PREDICT AUTOCORRELATION FOR FUTURE STEPS
+        # THIS MIGHT BE EXACTLY WHAT A GAUSSIAN PROCESS OF F WOULD DO
+        # WE CAN INCREMENTALLY UPDATE THE VARIANCE BY SETTING SIGMA(K+1) = PREDICTED_STD(k)
+        # BUT HOW DO WE SET THE LENGHT SCALE? THE MEAN IS ASSUMED 0 ANYWAYS. 
+        real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=100, time_shift=80)
+        real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=50, time_shift=40)
+        real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=10, time_shift=8)
         #slice = 20
         #"""
         #apply a GP regression with GPY once based on optimization based method and once based on the fourier transform

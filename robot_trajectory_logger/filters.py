@@ -103,41 +103,50 @@ def compute_length_scale_example(freq = 1, fs=500):
     l = compute_length_scale_from_fft(signal, fs)
     print(f"Computed Length Scale: {l:.4f}")
 
-def real_time_autocorrelation(signal: np.ndarray, fs: float, window_size: int):
-    #TODO fix autocorrelation function
-    #TODO write unit tests
-    #TODO it shouls probably not contain the whole signal until time t but a part of it
-    """
-    Simulates real-time streaming of a time-series signal,
-    computing and plotting the autocorrelation over time.
+import numpy as np
+import matplotlib.pyplot as plt
 
+def compute_autocorrelation(signal: np.ndarray, fs: float, window_size: int = 50, time_shift: int = 25):
+    """
+    Computes the autocorrelation of a signal using the FFT method.
+    
     Parameters:
     - signal: np.ndarray : Time-series data
     - fs: float : Sampling frequency (Hz)
-    - window_size: int : Window size for computing autocorrelation (samples)
+    - window_size: int : Window size in samples
+    - time_shift: int : Shift between windows in samples
+    """
+
+    window_1 = signal[window_size - time_shift : - time_shift]
+    window_2 = signal[window_size : - 1]
+    autocorr = np.correlate(window_1 - np.mean(window_1), window_2 - np.mean(window_2), mode='valid')
+
+    return autocorr
+
+def real_time_autocorrelation(signal: np.ndarray, fs: float, window_size: int = 50, time_shift: int = 25):
+    # TODO: CHECK HOW TO INCOROPRATE THE VARIANCE OF THE SIGNAL I.E. INTIAL ESTIMATE OF THE VARIANCE
+    """
+    Computes real-time autocorrelation between a sliding window in the signal and a shifted window. The result is not normalized
+    since we want to preserve the effects of changing magnitudes in the signal.
+    
+    Parameters:
+    - signal: np.ndarray : Time-series data
+    - fs: float : Sampling frequency (Hz)
+    - window_size: int : Window size in samples
+    - time_shift: int : Shift between windows in samples
     """
     autocorr_values = []
-    n = len(signal)
-    time_axis = np.arange(n) / fs
-   
+    time_axis = np.arange(len(signal)) / fs
     
-    for i in range(window_size + 1, n):
-        observed_signal = signal[window_size : i]
-        shifted_signal = signal[0: i - window_size]
-        var = np.var(observed_signal) * np.var(shifted_signal)
-        print("var", var)  
-        if var <= 0.001:
-            autocorr_values.append(1.0)  # var = 0 is either constant signal or first measurement
-        else:
-            autocorr = np.correlate(observed_signal - np.mean(observed_signal), shifted_signal-np.mean(shifted_signal), mode='full') / (n * var) #normalization
-            autocorr = autocorr[len(autocorr)//2:]  # Keep only the positive lags
-            autocorr_values.append(autocorr[0])  # Store only the zero-lag autocorrelation
+    for i in range(window_size + time_shift, len(signal)):
+        window_1 = signal[i - window_size - time_shift : i - time_shift]
+        window_2 = signal[i - window_size : i]
+        autocorr = np.correlate(window_1 - np.mean(window_1), window_2 - np.mean(window_2), mode='valid') # do not normalize because we intend to incorporate changing magnitudes in our prediction
+        autocorr_values.append(autocorr[0])
     
- # Plot results
-    
+    # Plot results
     fig, ax = plt.subplots(2, 1, figsize=(10, 8))
-    
-    ax[0].plot(time_axis[window_size + 1:], autocorr_values, label='Autocorrelation'+ " " + "Window = "+str(window_size), color='red')
+    ax[0].plot(time_axis[window_size + time_shift:], autocorr_values, label='Autocorrelation', color='red')
     ax[0].set_xlabel('Time (s)')
     ax[0].set_ylabel('Autocorrelation')
     ax[0].legend()
@@ -151,6 +160,14 @@ def real_time_autocorrelation(signal: np.ndarray, fs: float, window_size: int):
     
     plt.tight_layout()
     plt.show()
+
+# Example usage:
+# fs = 100  # Sampling frequency in Hz
+# window_size = 200  # Window size in samples (e.g., 2 seconds if fs=100)
+# time_shift = 50  # Shift between windows in samples (e.g., 0.5 seconds if fs=100)
+# signal = np.sin(2 * np.pi * 1 * np.arange(0, 10, 1/fs))  # Example 1 Hz sine wave
+# real_time_autocorrelation(signal, fs, window_size, time_shift)
+
 
 def compute_length_scale_from_fft(signal, fs, sc=250, num_bins=None, plot=True):
     """
