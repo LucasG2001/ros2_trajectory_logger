@@ -1,7 +1,8 @@
 import numpy as np
 import GPy
 import matplotlib.pyplot as plt
-from filters import compute_length_scale_from_fft, compute_length_scale_from_fft_windowed
+from filters import compute_length_scale_from_fft, compute_length_scale_from_fft_windowed, compute_autocorrelation
+import time
 
 def fit_gaussian_gp(data: np.ndarray, n_window: int = 25, optimize: bool = True) -> GPy.models.GPRegression:
     """
@@ -73,3 +74,66 @@ def fit_gaussian_gp(data: np.ndarray, n_window: int = 25, optimize: bool = True)
     plt.show()
     
     return model
+
+
+def autocorrellation_cpd(f_magnitude, noise_level=0.1):
+    """
+    Perform Gaussian Process Regression with self-correlation on the force magnitude data using GPy library. 
+    Simulates a Datastream of the Force and uses the previous values to predict the next value(s).
+    """
+    # Parameters
+    window_size = 50  # Sliding window size for datapoints
+    time_shift = 35  # Time shift for the autocorrelation signal
+    padding_dim = window_size + time_shift + 1
+    y_data = np.hstack([np.zeros(padding_dim), f_magnitude])  # prepend zeros
+    n_points = len(y_data)
+
+    print("Shape of y_data:", y_data.shape)
+    
+    # Storage for predictions
+    means = np.zeros(n_points)
+    sigmas = np.ones(n_points) * noise_level
+    alpha = 0.5
+    autocorrelations = np.zeros(n_points)
+    anomalies = []
+    times = []
+
+    # Streaming GP Processing
+    for i in range(padding_dim, n_points):
+        print(i)
+        start_time = time.time()
+        
+        # Feature vector: last `window_size` points
+        shifted_signal = y_data[i - window_size - time_shift : i - time_shift].reshape(1, -1).flatten()
+        feature_vector = y_data[i - window_size : i].reshape(1, -1).flatten()
+        r_xx = np.correlate(feature_vector - np.mean(feature_vector), shifted_signal - np.mean(shifted_signal), mode='valid')/np.sqrt(window_size)
+        autocorrelations[i]= np.abs(r_xx[0])
+
+        means[i] = np.mean(autocorrelations[i-window_size:i])
+        sigmas[i] = noise_level + (1 - alpha) * np.std(autocorrelations[i - window_size:i]) + alpha * sigmas[i - 1]
+
+        # Detect anomalies based on confidence interval
+        lower_bound, upper_bound = means[i] - 1.96 * sigmas[i], means[i] + 1.96 * sigmas[i]
+        if r_xx < lower_bound or r_xx > upper_bound:
+            anomalies.append(i)
+
+        
+        end_time = time.time()
+        times.append(end_time - start_time)
+
+    # Plot results
+    plt.figure(figsize=(12, 6))
+    plt.plot(autocorrelations, label="Autocorrelation Measured", color="blue", alpha=0.6, linewidth=1.0)
+    plt.plot(means, label="Expected Mean", color="red", linewidth=2.0)
+    plt.fill_between(np.arange(len(means)), means - 1.96 * sigmas, means + 1.96 * sigmas, 
+                     color="orange", alpha=0.3, label="95% Confidence Interval")
+    plt.scatter(anomalies, autocorrelations[anomalies], color="black", label="Anomalies", zorder=5, s=15)
+    plt.xlabel("Time Steps")
+    plt.ylabel("Force Magnitude")
+    plt.title("GP Regression with Self-Correlation")
+    plt.legend()
+    plt.show()
+
+    print("Average time per iteration:", np.mean(times))
+
+    return means, sigmas

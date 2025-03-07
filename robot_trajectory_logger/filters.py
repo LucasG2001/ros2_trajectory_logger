@@ -141,7 +141,7 @@ def real_time_autocorrelation(signal: np.ndarray, fs: float, window_size: int = 
     for i in range(window_size + time_shift, len(signal)):
         window_1 = signal[i - window_size - time_shift : i - time_shift]
         window_2 = signal[i - window_size : i]
-        autocorr = np.correlate(window_1 - np.mean(window_1), window_2 - np.mean(window_2), mode='valid') # do not normalize because we intend to incorporate changing magnitudes in our prediction
+        autocorr = np.correlate(window_1 - np.mean(window_1), window_2 - np.mean(window_2), mode='valid')/window_size # do not normalize because we intend to incorporate changing magnitudes in our prediction
         autocorr_values.append(autocorr[0])
     
     # Plot results

@@ -19,7 +19,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 from time import time
 import GPy
-from gaussian_on_slices import fit_gaussian_gp
+from gaussian_on_slices import fit_gaussian_gp, autocorrellation_cpd
 
 def perform_gp_self_correlation_sklearn(f_magnitude, passband=(10, 50), sampling_frequency=500):
     """
@@ -268,6 +268,7 @@ if __name__ == "__main__":
         f_magnitude = spike_detector.drilling_force
         positions = spike_detector.displacement
         velocities = spike_detector.velocities  
+        autocorrellation_cpd(f_magnitude, noise_level=0.1)
         # Perform GP regression
         #plot_moving_averages(f_magnitude)
         # means, sigmas = perform_gp_self_correlation_sklearn(f_magnitude, passband, sampling_frequency)
@@ -276,9 +277,9 @@ if __name__ == "__main__":
         # THIS MIGHT BE EXACTLY WHAT A GAUSSIAN PROCESS OF F WOULD DO
         # WE CAN INCREMENTALLY UPDATE THE VARIANCE BY SETTING SIGMA(K+1) = PREDICTED_STD(k)
         # BUT HOW DO WE SET THE LENGHT SCALE? THE MEAN IS ASSUMED 0 ANYWAYS. 
-        real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=100, time_shift=80)
-        real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=50, time_shift=40)
-        real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=10, time_shift=8)
+        # real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=50, time_shift=1)
+        # real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=50, time_shift=10)
+        # real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=50, time_shift=45)
         #slice = 20
         #"""
         #apply a GP regression with GPY once based on optimization based method and once based on the fourier transform
