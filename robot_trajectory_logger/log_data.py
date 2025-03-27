@@ -60,21 +60,21 @@ class RobotTrajectoryLogger(Node):
         # self.timer_send_trajectory = self.create_timer(1.0 / 0.3, self.send_trajectory)
 
         # Timer for logging robot state at 500Hz
-        self.timer_log_data = self.create_timer(1.0 / 500.0, self.log_data)
+        self.timer_log_data = self.create_timer(1.0 / 1000.0, self.log_data)
 
         # Subscribe to the robot state
         self.subscription = self.create_subscription(
             FrankaRobotState,  # Replace with the correct message type for franka_robot_state
             '/franka_robot_state_broadcaster/robot_state',
             self.robot_state_callback,
-            10)
+            1)
         
         # Subscribe to JacobianEE
         self.jacobianEE_subscription = self.create_subscription(
             JacobianEE,
             '/jacobianEE',
             self.jacobianEE_callback,
-            10)
+            1)
         
         """ self.joint_z_acceleration_subscription = self.create_subscription(
             JointEEState,
@@ -86,25 +86,25 @@ class RobotTrajectoryLogger(Node):
             Float64,
             '/dt_fext_z',
             self.dt_fext_z_callback,
-            10)
+            1)
         
         self.fext_desired_subscription = self.create_subscription(
             Float64,
             '/fext_desired',
             self.fext_desired_callback,
-            10)
+            1)
         
-        self.D_z_subscription = self.create_subscription(
+        self.velocity_desired_subscription = self.create_subscription(
             Float64,
-            '/D_z',
-            self.D_z_callback,
-            10)
+            '/velocity_desired',
+            self.velocity_desired_callback,
+            1)
         
-        self.velocity_error_subscription = self.create_subscription(
+        self.position_desired_subscription = self.create_subscription(
             Float64,
-            '/velocity_error',
-            self.velocity_error_callback,
-            10)
+            '/position_desired',
+            self.position_desired_callback,
+            1)
 
         # Initialize state and variables
         self.time_start = time.time()
@@ -128,6 +128,8 @@ class RobotTrajectoryLogger(Node):
         self.D_z = 0.0
         self.velocity_error = 0.0
         self.f_ext_desired = 0.0
+        self.velocity_desired = 0.0
+        self.position_desired = 0.0
 
         self.logging_active = False
 
@@ -198,6 +200,12 @@ class RobotTrajectoryLogger(Node):
 
     def velocity_error_callback(self, msg: Float64):
         self.velocity_error = msg.data
+    
+    def velocity_desired_callback(self, msg: Float64):
+        self.velocity_desired = msg.data
+
+    def position_desired_callback(self, msg: Float64):
+        self.position_desired = msg.data
 
     
     def log_data(self):
@@ -260,7 +268,9 @@ class RobotTrajectoryLogger(Node):
             "dt_Fext_z": self.dt_Fext_z,
             "D_z": self.D_z,
             "velocity_error": self.velocity_error,
-            "f_ext_desired": self.f_ext_desired
+            "f_ext_desired": self.f_ext_desired,
+            "velocity_desired": self.velocity_desired,
+            "position_desired": self.position_desired
 
         }
 
