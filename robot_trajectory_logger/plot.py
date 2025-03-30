@@ -55,7 +55,6 @@ def extract_data(data):
     dtFext_desired = []
     f_ext_desired = []
     velocity_desired = []
-    displacement_desired = []
 
     for entry in data:
         # Extract force data
@@ -89,7 +88,7 @@ def extract_data(data):
         ee_orientations['yaw'].append(entry['ee_pose']['orientation']['yaw'])
 
         # Extract dtFext_desired, prjection on the correct axis happens in the .cpp file of cartesian impedance controller
-        dtFext_desired.append(entry['dt_Fext_z'])
+        dtFext_desired.append(entry['dt_Fext_desired'])
 
         # Extract f_ext_desired
         f_ext_desired.append(entry['f_ext_desired'])
@@ -97,10 +96,7 @@ def extract_data(data):
         # Extract velocity desired
         velocity_desired.append(entry['velocity_desired'])
 
-        # Extract displacement desired
-        displacement_desired.append(entry['position_desired'])
-
-    return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations,dtFext_desired, f_ext_desired, velocity_desired, displacement_desired
+    return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFext_desired, f_ext_desired, velocity_desired
 
 def butter_band_filter(data, high,low, fs, order):
     """
