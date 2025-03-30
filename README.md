@@ -10,11 +10,11 @@ This script is used to gather the inputs from the standard messages as well as c
 
 This script is used to plot the data gathered by `log_data.py`. It provides visual representations of the logged data with additional band-pass filter and fft transform function integrated for enhanced data analysis. Make sure to adapt the sampling rate int he main function if it is changed in the `log_data.py` script. The following varibales represent the most important data from the drill controller:
 
-- ee_positions: end-effector position in x,y,z
-- ee-orientation: end-effector roll,pitch and yaw
-- dt_Fext_desired: derivative of resultant force acting on end-effector in desired drilling direction
-- f_ext_desired: resultant force acting on end-effector in desired drilling direction
-- velocity_desired: velocity in desired drilling direction
+- `ee_positions`: end-effector position in x,y,z
+- `ee-orientation`: end-effector roll,pitch and yaw
+- `dt_Fext_desired`: derivative of resultant force acting on end-effector in desired drilling direction
+- `f_ext_desired`: resultant force acting on end-effector in desired drilling direction
+- `velocity_desired`: velocity in desired drilling direction
 
 When adding new signals the current architecture can be used from the extract_data function and adapted accordingly if signal names are changed.
 
