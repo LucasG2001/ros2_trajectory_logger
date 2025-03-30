@@ -1,10 +1,10 @@
 # ros2_trajectory_logger
 
-This repository is used to gather data from the Franka Emika FR3 during usage. This branch is set up to gather data from the drill controller and automatically start and stop log files with the foot pedal.
+This repository is used to gather data from the Franka Emika FR3 during usage. This branch is set up to gather data from the drill controller and automatically start and stop log files with the foot pedal. The log files will be saved in the directory where the `ros2 run robot_trajectory_logger robot_trajectory_logger` command is executed. 
 
 ## log_data.py
 
-This script is used to gather the inputs from the standard messages as well as custom messages from the `messages_fr3` repository and create the log file. If you want to gather new signals from the FR3 during operation, you can modify this script accordingly. The architecture of message subscription and data gathering over callback can be copied from the preexisting examples. The log file will be automatically started and stopped via foot pedal actuation which sends a message over the PlannerService and is handled by the handle_service function.
+This script is used to gather the inputs from the standard messages as well as custom messages from the `messages_fr3` repository and create the log file. If you want to gather new signals from the FR3 during operation, you can modify this script accordingly. The architecture of message subscription and data gathering over callback can be copied from the preexisting examples. The log file will be automatically started and stopped via foot pedal actuation which sends a message over the PlannerService and is handled by the handle_service function. Stopping and resarting a logfile within the same minute will not work as the log file names will then be the same. The current timestamp in the name is set to a precision of up to a minute.
 
 ## plot.py
 
