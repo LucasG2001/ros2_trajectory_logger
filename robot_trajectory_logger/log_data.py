@@ -44,7 +44,6 @@ def homogenous_transform_to_pose(transform):
 
     return pose_vector, quaternion
 
-
 class RobotTrajectoryLogger(Node):
 
     def __init__(self):

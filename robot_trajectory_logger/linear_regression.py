@@ -281,11 +281,14 @@ if __name__ == "__main__":
     acceleration_desired = 1000 * np.diff(velocity_desired, prepend=velocity_desired[1])
 
 
-    # for i in range (0, len(acceleration_desired)-1):
-    #    acceleration_desired[i+1] = acceleration_desired[i] * 0.9 + 0.1 * acceleration_desired[i+1]
+    for i in range (0, len(acceleration_desired)-1):
+       acceleration_desired[i+1] = acceleration_desired[i] * 0.9 + 0.1 * acceleration_desired[i+1]
        
     #low pass filter the acceleration
-    acceleration_desired = low_pass_filter(acceleration_desired, 7, sampling_rate)
+    # acceleration_desired = low_pass_filter(acceleration_desired, 7, sampling_rate)
+
+    # EMA filter the acceleration
+
 
     for i in range(0, len(acceleration_desired)):
         if acceleration_desired[i] > 2:
