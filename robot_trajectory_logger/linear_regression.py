@@ -250,14 +250,14 @@ def compute_displacement(pose_x,pose_y,pose_z):
             (pose_y[i] - pose_y[0])**2 + 
             (pose_z[i] - pose_z[0])**2
         )
-        if pose_z[i] - initial_z_pose < 0:
+        if pose_z[i] - initial_z_pose > 0:
             displacement_total[i] = 0
 
     return displacement_total
 
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2025_02_28_1121.json'
+    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2025_02_28_1051.json'
     
     # Load and process the log file
     data = load_log_file(logfile)
@@ -278,7 +278,7 @@ if __name__ == "__main__":
     for i in range (0, len(velocities_z)-1):
        velocities_z[i+1] = velocities_z[i] * 0.9 + 0.1 * velocities_z[i+1]
     
-    acceleration_desired = 1000 * np.diff(velocity_desired, prepend=velocities_z[1])
+    acceleration_desired = 1000 * np.diff(velocity_desired, prepend=velocity_desired[1])
 
 
     # for i in range (0, len(acceleration_desired)-1):
@@ -334,6 +334,8 @@ if __name__ == "__main__":
     (ee_positions_y - ee_positions_y[0])**2 + 
     (ee_positions_z - ee_positions_z[0])**2
     )
+
+    displacement_total = compute_displacement(ee_positions_x,ee_positions_y,ee_positions_z)
 
     # Plot the displacement (Z-axis)
     axs[0].plot(timestamps, displacement_total, label="Displacement", color='blue')
