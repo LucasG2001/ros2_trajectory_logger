@@ -182,6 +182,26 @@ def butter_band_filter(data, high,low, fs, order):
 
     return filtered_data
 
+def low_pass_filter(data, cutoff, fs, order=3):
+    """
+    Apply a Butterworth low-pass filter to the data.
+
+    Parameters:
+    - data (dict): Dictionary of data to filter.
+    - cutoff (float): Cutoff frequency in Hz.
+    - fs (int): Sampling rate in Hz.
+    - order (int): Order of the filter.
+
+    Returns:
+    - Dictionary of filtered data.
+    """
+    filtered_data = {}
+    
+    b, a = butter(order, cutoff / (fs / 2), btype='low')
+    filtered_data = filtfilt(b, a, data)
+
+    return filtered_data
+
 def plot_force_fft(data, sampling_rate):
     """
     Plot the FFT of the force data.
@@ -204,9 +224,40 @@ def plot_force_fft(data, sampling_rate):
     plt.tight_layout()
     plt.show()
 
+def compute_displacement(pose_x,pose_y,pose_z):
+    """
+    Compute the total displacement from the first position.
+    
+    Parameters:
+    - pose_x (list): List of x-coordinates.
+    - pose_y (list): List of y-coordinates.
+    - pose_z (list): List of z-coordinates.
+    
+    Returns:
+    - displacement_total (np.array): Total displacement from the first position.
+    """
+
+    # save the first position in z direction
+    initial_z_pose = pose_z[0]
+
+    # initialize the displacement array
+    displacement_total = np.zeros(len(pose_z))
+
+    # if the difference between the current z position and the initial z position is greater than 0
+    for i in range(0, len(pose_z)-1):
+        displacement_total[i] = np.sqrt(
+            (pose_x[i] - pose_x[0])**2 + 
+            (pose_y[i] - pose_y[0])**2 + 
+            (pose_z[i] - pose_z[0])**2
+        )
+        if pose_z[i] - initial_z_pose < 0:
+            displacement_total[i] = 0
+
+    return displacement_total
+
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2025_02_28_1404.json'
+    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2025_02_28_1121.json'
     
     # Load and process the log file
     data = load_log_file(logfile)
@@ -227,11 +278,20 @@ if __name__ == "__main__":
     for i in range (0, len(velocities_z)-1):
        velocities_z[i+1] = velocities_z[i] * 0.9 + 0.1 * velocities_z[i+1]
     
-    acceleration_z = 1000 * np.diff(velocities_z, prepend=velocities_z[1])
+    acceleration_desired = 1000 * np.diff(velocity_desired, prepend=velocities_z[1])
 
-    for i in range (0, len(acceleration_z)-1):
-       acceleration_z[i+1] = acceleration_z[i] * 0.9 + 0.1 * acceleration_z[i+1]
 
+    # for i in range (0, len(acceleration_desired)-1):
+    #    acceleration_desired[i+1] = acceleration_desired[i] * 0.9 + 0.1 * acceleration_desired[i+1]
+       
+    #low pass filter the acceleration
+    acceleration_desired = low_pass_filter(acceleration_desired, 7, sampling_rate)
+
+    for i in range(0, len(acceleration_desired)):
+        if acceleration_desired[i] > 2:
+            acceleration_desired[i] = 2
+        if acceleration_desired[i] < -2:
+            acceleration_desired[i] = -2
 
     force_derivative = 1000 * np.diff(force_z, prepend=force_z[1])
 
@@ -239,7 +299,7 @@ if __name__ == "__main__":
     for i in range (0, len(force_derivative)-1):
          force_derivative[i+1] = force_derivative[i] * 0.9 + 0.1 * force_derivative[i+1]
 
-    fig, axs = plt.subplots(5, 1, figsize=(18, 18), sharex=True)
+    fig, axs = plt.subplots(6, 1, figsize=(18, 18), sharex=True)
 
     delta = -force_z / velocities_z
 
@@ -297,15 +357,21 @@ if __name__ == "__main__":
 
     axs[3].plot(timestamps, velocity_desired, label="vel", color='orange')
     axs[3].set_xlabel("Timestamps")
-    axs[3].set_ylabel("Velocity [m/s]")
+    axs[3].set_ylabel("Velocity EE [m/s]")
     axs[3].legend()
     axs[3].grid(True)
 
-    axs[4].plot(timestamps, orientation_error, label="orientation error", color='orange')
+    axs[4].plot(timestamps, acceleration_desired, label="acc", color='magenta')
     axs[4].set_xlabel("Timestamps")
-    axs[4].set_ylabel("Orientation Error")
+    axs[4].set_ylabel("Acceleration EE [m/s^2]")
     axs[4].legend()
     axs[4].grid(True)
+
+    axs[5].plot(timestamps, orientation_error, label="orientation error", color='orange')
+    axs[5].set_xlabel("Timestamps")
+    axs[5].set_ylabel("Orientation Error")
+    axs[5].legend()
+    axs[5].grid(True)
 
     # # Plot the linear regression results (F_h and k for the Z-axis)
     # axs[2].plot(window_start_timestamps, F_h_z_list, label="F_h (Z-axis)", color='orange')
@@ -364,5 +430,5 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-    print(max(orientation_error))
+    plot_force_fft(acceleration_desired, sampling_rate)
 

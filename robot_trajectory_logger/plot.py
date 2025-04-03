@@ -148,7 +148,7 @@ if __name__ == "__main__":
     data = load_log_file(logfile)
     timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFext_desired, f_ext_desired, velocity_desired, displacement_desired = extract_data(data)
 
-    sampling_rate = 1000  # 500 Hz update rate
+    sampling_rate = 1000  # 1000 Hz update rate
 
     # Convert positions to numpy arrays
     ee_positions_x = np.array(ee_positions['x'])
