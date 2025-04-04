@@ -23,6 +23,7 @@ from gaussian_on_slices import fit_gaussian_gp, autocorrellation_cpd
 from scipy.stats import ttest_ind
 
 
+
 def perform_gp_self_correlation(displacement, velocities, f_magnitude, passband=(10, 50), sampling_frequency=1000):
     """
     Perform Gaussian Process Regression with self-correlation on the force magnitude data using GPy library. 
@@ -106,7 +107,7 @@ def perform_gp_self_correlation(displacement, velocities, f_magnitude, passband=
     print("Average time per fitting iteration:", np.mean(times))
 
     # Plot results
-    fig, axs = plt.subplots(3, 1, figsize=(12, 16))
+    fig, axs = plt.subplots(3, 1, figsize=(12, 16), sharex=True)
     axs[0].plot(y_data, label="Original Data", color="blue", alpha=0.6, linewidth=1.0)
     axs[0].plot(means, label="GP Mean", color="red", linewidth=2.0)
     axs[0].fill_between(np.arange(len(means)), means - 1.96 * sigmas, means + 1.96 * sigmas, 
@@ -148,31 +149,32 @@ if __name__ == "__main__":
     cutoff_time = 10.5
     passband = (5, 50)
    
-    for filename in os.listdir(folder_path):
-        file_path = os.path.join(folder_path, filename)
-        if os.path.isfile(file_path):  # Ensure it's a file
-            print(f"Processing file: {file_path}")
-        # Load data
-        spike_detector = SpikeDetector(file_path, fs=sampling_frequency, time_window=cutoff_time, passband=passband) # read out metrics
-        # spike_detector.plot_metrics()
-        # spike_detector.causal_lowpass_filter(spike_detector.drilling_force, cutoff=3.0, order=4)
-        # spike_detector.plot_frequency_bands_over_time(spike_detector.drilling_force, window_size=0.1, overlap=0.95)
-        # real_time_autocorrelation(spike_detector.drilling_force, fs=spike_detector.fs, window_size=10)
+    # for filename in os.listdir(folder_path):
+    #     file_path = os.path.join(folder_path, filename)
+    #     if os.path.isfile(file_path):  # Ensure it's a file
+    #         print(f"Processing file: {file_path}")
+    # Load data
+    file_path = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2025_02_28_1404.json'
+    spike_detector = SpikeDetector(file_path, fs=sampling_frequency, time_window=cutoff_time, passband=passband) # read out metrics
+    # spike_detector.plot_metrics()
+    # spike_detector.causal_lowpass_filter(spike_detector.drilling_force, cutoff=3.0, order=4)
+    # spike_detector.plot_frequency_bands_over_time(spike_detector.drilling_force, window_size=0.1, overlap=0.95)
+    # real_time_autocorrelation(spike_detector.drilling_force, fs=spike_detector.fs, window_size=10)
 
-        # compute_and_plot_stft(spike_detector.velocities, spike_detector.fs)
+    # compute_and_plot_stft(spike_detector.velocities, spike_detector.fs)
 
-        # plt.scatter(indices, spike_detector.spectral_intensity[indices], color="red", label="Outliers", s=10, zorder=3)
-        f_magnitude = spike_detector.drilling_force - np.mean(spike_detector.drilling_force)
-        positions = spike_detector.displacement
-        velocities = spike_detector.velocities  
-        # autocorrellation_cpd(f_magnitude, positions, noise_level=0.1)
-        # Perform GP regression
-        #plot_moving_averages(f_magnitude)
-        means, sigmas = perform_gp_self_correlation(positions, velocities, f_magnitude, passband, sampling_frequency)
-        # real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=50, time_shift=1)
-        #slice = 20
-          
-        # Plot results
-        #plot_results_sequential(spike_detector.dt_Fext_z_filtered, spike_detector.velocities, means, sigmas, indices, outliers, type="GP")
+    # plt.scatter(indices, spike_detector.spectral_intensity[indices], color="red", label="Outliers", s=10, zorder=3)
+    f_magnitude = spike_detector.drilling_force - np.mean(spike_detector.drilling_force)
+    positions = spike_detector.displacement
+    velocities = spike_detector.velocities  
+    # autocorrellation_cpd(f_magnitude, positions, noise_level=0.1)
+    # Perform GP regression
+    #plot_moving_averages(f_magnitude)
+    means, sigmas = perform_gp_self_correlation(positions, velocities, f_magnitude, passband, sampling_frequency)
+    # real_time_autocorrelation(f_magnitude, fs=sampling_frequency, window_size=50, time_shift=1)
+    #slice = 20
+        
+    # Plot results
+    #plot_results_sequential(spike_detector.dt_Fext_z_filtered, spike_detector.velocities, means, sigmas, indices, outliers, type="GP")
 
-        # plot_velocity_force(f_magnitude, velocities)
+    # plot_velocity_force(f_magnitude, velocities)

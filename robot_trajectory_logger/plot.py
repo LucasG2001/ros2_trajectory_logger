@@ -88,7 +88,7 @@ def extract_data(data):
         ee_orientations['yaw'].append(entry['ee_pose']['orientation']['yaw'])
 
         # Extract dtFext_desired, prjection on the correct axis happens in the .cpp file of cartesian impedance controller
-        dtFext_desired.append(entry['dt_Fext_desired'])
+        dtFext_desired.append(entry['dt_Fext_z'])
 
         # Extract f_ext_desired
         f_ext_desired.append(entry['f_ext_desired'])

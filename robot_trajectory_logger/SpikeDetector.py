@@ -6,7 +6,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
 from filters import ema_filter, moving_average_filter, normalize_array, compute_and_plot_stft, real_time_outlier_detection, plot_real_time_outliers, plot_spectral_intensity
 from RTFilters import RealTimeBandpassFilter, RealTimeLowpassFilter
-from linear_regression import extract_data
+from plot import extract_data, load_log_file
 from scipy.signal import spectrogram, stft, butter, freqz, lfilter
 
 """
@@ -42,15 +42,15 @@ class SpikeDetector:
         T = 1/fs # sampling period
         self.fs = fs # sampling frequency
         self.passband = passband # filtering passband
-        self.data_file = logfile
-        self.timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations,dtFextz, Dz, vel_error, f_ext_desired = extract_data(logfile, fs, time_window) # dt_-fext is already filtered
+        self.data_file = load_log_file(logfile)
+        self.timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFext_desired, f_ext_desired, velocity_desired = extract_data(self.data_file) 
         self.timestamps = np.array(self.timestamps)
         self.orientations = np.array(euler_angles)
         # get drilling forces
         self.drilling_force = np.array(f_ext_desired)
-        self.dt_Fext_z = np.array(dtFextz)
-        self.dt_Fext_z_raw = np.concatenate(([0], np.diff(self.dt_Fext_z) / T))
-        self.dt_Fext_z_filtered = self.simulate_rt_filter(self.dt_Fext_z_raw, passband, 'bandpass') # Bandpass filter the derivative of the force
+        self.dtFext_desired = np.array(dtFext_desired)
+        self.dtFext_desired_raw = np.concatenate(([0], np.diff(self.dtFext_desired) / T))
+        self.dtFext_desired_filtered = self.simulate_rt_filter(self.dtFext_desired_raw, passband, 'bandpass') # Bandpass filter the derivative of the force
         # get displacements
         self.displacement = np.array(list(ee_positions.values())).T
         print("displacement shape is ", self.displacement.shape)
@@ -82,7 +82,7 @@ class SpikeDetector:
           plt.figure()
           plt.plot(normalize_array(moving_average_filter(self.velocities)))
           plt.plot(moving_average_filter(K, window_size=10))
-          plt.plot(normalize_array(self.dt_Fext_z))
+          plt.plot(normalize_array(self.dtFext_desired))
           plt.show()
 
     def compute_and_plot_mad(self):
@@ -164,7 +164,7 @@ class SpikeDetector:
         noverlap = nperseg - 1  # Maximum overlap for per-sample estimates
         f_min, f_max = (0, self.fs/2)  # Define passband
         # Zero-pad signal to ensure full coverage
-        padded_signal = np.concatenate((self.dt_Fext_z_raw, np.ones(nperseg - 1) * self.dt_Fext_z_raw[0]))
+        padded_signal = np.concatenate((self.dtFext_desired_raw, np.ones(nperseg - 1) * self.dtFext_desired_raw[0]))
         # Compute STFT
         f, t, Zxx = stft(padded_signal, fs=self.fs, nperseg=nperseg, noverlap=noverlap, window='hann')
         # Compute spectral density (power) |Zxx|^2
@@ -173,12 +173,12 @@ class SpikeDetector:
         mask = (f >= f_min) & (f <= f_max)
         spectral_density = np.sum(Sxx[mask, :], axis=0)  # Sum power over selected frequencies
         # Map STFT time bins back to original signal time indices
-        original_time = np.linspace(0, len(self.dt_Fext_z_raw) / self.fs, len(self.dt_Fext_z_raw))
+        original_time = np.linspace(0, len(self.dtFext_desired_raw) / self.fs, len(self.dtFext_desired_raw))
         # Interpolate to get per-sample spectral density estimates
         spectral_density_interp = np.interp(original_time, t, spectral_density)
         self.spectral_intensity = spectral_density_interp
         # Plot the total spectral intensity over time
-        axs[5].plot(np.arange(len(self.dt_Fext_z_raw)), np.abs(spectral_density_interp), label=f'Total Spectral Intensity ({f_min}-{f_max} Hz)', color='b')
+        axs[5].plot(np.arange(len(self.dtFext_desired_raw)), np.abs(spectral_density_interp), label=f'Total Spectral Intensity ({f_min}-{f_max} Hz)', color='b')
         axs[5].set_xlabel('Time [s]')
         axs[5].set_ylabel('Spectral Intensity')
         axs[5].legend()
