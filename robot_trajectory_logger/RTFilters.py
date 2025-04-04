@@ -1,6 +1,38 @@
 from scipy import signal
 import numpy as np
 
+
+from scipy import signal
+
+class RealTimeLowpassFilter:
+    def __init__(self, cutoff, fs, order=2):
+        """
+        Initializes a real-time Butterworth lowpass filter.
+
+        :param cutoff: Cutoff frequency (Hz)
+        :param fs: Sampling frequency (Hz)
+        :param order: Filter order (default: 2 for minimal lag)
+        """
+        nyquist = 0.5 * fs  # Nyquist frequency
+        normalized_cutoff = cutoff / nyquist
+
+        # Design the filter in Second-Order Sections (sos) form
+        self.sos = signal.butter(order, normalized_cutoff, btype='low', output='sos')
+
+        # Initialize filter state (correctly sets past values)
+        self.zi = signal.sosfilt_zi(self.sos)  # Initial conditions for each section
+
+    def filter_sample(self, sample):
+        """
+        Filters a single data sample in real time.
+
+        :param sample: Incoming signal sample (scalar)
+        :return: Filtered signal sample (scalar)
+        """
+        filtered_sample, self.zi = signal.sosfilt(self.sos, [sample], zi=self.zi)
+        return filtered_sample[0]  # Extract single value
+
+
 """simulates a real-time bandpass filter using a Butterworth filter design."""
 
 class RealTimeBandpassFilter:

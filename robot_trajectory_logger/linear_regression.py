@@ -41,19 +41,29 @@ def extract_data(filename, sampling_rate = 500, time_window = 8):
     timestamps = list(range(int(cutoff_index)))
 
     forces = {'x': [], 'y': [], 'z': []}
+    torques = {'x': [], 'y': [], 'z': []}
     reference_positions = {'x': [], 'y': [], 'z': []}
     euler_angles = {'roll': [], 'pitch': [], 'yaw': []}
     ee_positions = {'x': [], 'y': [], 'z': []}
     ee_orientations = {'roll': [], 'pitch': [], 'yaw': []}
     dtFextz = []
+    Dz = []
+    vel_error = []
+    f_ext_desired = []
 
     for i, entry in enumerate(data):
         if i >= cutoff_index:
             break # Stop processing data after the time window
         # Extract force data
+        # Extract force data
         forces['x'].append(entry['f_ext']['force']['x'])
         forces['y'].append(entry['f_ext']['force']['y'])
         forces['z'].append(entry['f_ext']['force']['z'])
+
+        # Extract torque data
+        torques['x'].append(entry['f_ext']['torque']['x'])
+        torques['y'].append(entry['f_ext']['torque']['y'])
+        torques['z'].append(entry['f_ext']['torque']['z'])
 
         # Extract reference position data
         reference_positions['x'].append(entry['reference_position']['x'])
@@ -78,9 +88,16 @@ def extract_data(filename, sampling_rate = 500, time_window = 8):
         # Extract dtFextz
         dtFextz.append(entry['dt_Fext_z'])
 
-        i += 1 # increase counter
+        # Extract D_z
+        Dz.append(entry['D_z'])
 
-    return timestamps, forces, reference_positions, euler_angles, ee_positions, ee_orientations, dtFextz
+        # Extract velocity error
+        vel_error.append(entry['velocity_error'])
+
+        # Extract f_ext_desired
+        f_ext_desired.append(entry['f_ext_desired'])
+
+    return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations,dtFextz, Dz, vel_error, f_ext_desired
 
 def perform_linear_regression(x, F_ext):
     """

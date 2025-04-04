@@ -28,7 +28,7 @@ def fit_gpr(x_train, y_train, length_scale=None, fixed=False):
     return gpr
 
 # Define sampling frequency
-sampling_freq = 200  # Hz (Increased for higher frequency resolution)
+sampling_freq = 1000  # Hz (Increased for higher frequency resolution)
 signal_duration = 1.0  # seconds
 noise_level = 0.2
 num_samples = int(sampling_freq * signal_duration)
@@ -36,7 +36,7 @@ cutoff_frequency = 50  # Hz, cutoff frequency for the fourier-spectrum based est
 
 # Generate training data
 x = np.linspace(0, signal_duration, num_samples, endpoint=False)
-signal_cases = [[1], [1, 3], [1, 3, 5, 20], [5, 10, 20, 50], [10, 20, 50, 100]]  # More complex cases
+signal_cases = [[5], [1, 3], [1, 3, 5, 20], [5, 10, 20, 50], [10, 20, 50, 100]]  # More complex cases
 signals = [generate_noisy_sinusoid(x, freqs, noise_level) for freqs in signal_cases]
 
 # Fit GPR models and plot results

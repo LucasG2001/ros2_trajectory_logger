@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
 from filters import ema_filter, moving_average_filter, normalize_array, compute_and_plot_stft, real_time_outlier_detection, plot_real_time_outliers, plot_spectral_intensity
-from RTBandPassFilter import RealTimeBandpassFilter
+from RTFilters import RealTimeBandpassFilter, RealTimeLowpassFilter
 from linear_regression import extract_data
 from scipy.signal import spectrogram, stft, butter, freqz, lfilter
 
@@ -13,35 +13,66 @@ from scipy.signal import spectrogram, stft, butter, freqz, lfilter
 implements spike detector class to save and operate on dtill data
 """
 
+
+def detect_trigger(array):
+    triggered = False  # Initial state of the trigger
+    threshold = 0.05  # Threshold value
+    triggered_indexes = []  # List to store triggered indexes
+    triggered_values = []   # List to store triggered values
+
+    for idx, value in enumerate(array):
+        # Check if the absolute value exceeds the threshold
+        if abs(value) > threshold:
+            if not triggered:  # Triggering condition
+                triggered = True
+                triggered_indexes.append(idx)  # Save the index
+                triggered_values.append(value)  # Save the value
+                print(f"Triggered at index {idx}, value: {value}")
+        else:
+            # Reset the trigger when the value falls below the threshold
+            if triggered and abs(value) < 0.015:
+                triggered = False
+                print(f"Reset trigger at index {idx}, value: {value}")
+
+    return triggered_indexes, triggered_values
+
+
 class SpikeDetector:
     def __init__(self, logfile, fs=500, time_window=8, passband=(3, 8)):
         T = 1/fs # sampling period
         self.fs = fs # sampling frequency
         self.passband = passband # filtering passband
         self.data_file = logfile
-        self.timestamps, forces, _ , _ , ee_positions, orientations, dt_Fext_z = extract_data(logfile, fs, time_window) # dt_-fext is already filtered
+        self.timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations,dtFextz, Dz, vel_error, f_ext_desired = extract_data(logfile, fs, time_window) # dt_-fext is already filtered
         self.timestamps = np.array(self.timestamps)
-        self.orientations = np.array(orientations)
+        self.orientations = np.array(euler_angles)
         # get drilling forces
-        self.drilling_force = np.array(forces['z'])
-        self.dt_Fext_z = np.array(dt_Fext_z)
+        self.drilling_force = np.array(f_ext_desired)
+        self.dt_Fext_z = np.array(dtFextz)
         self.dt_Fext_z_raw = np.concatenate(([0], np.diff(self.dt_Fext_z) / T))
-        self.dt_Fext_z_filtered = self.simulate_rt_bandpass_filter(self.dt_Fext_z_raw, passband) # Bandpass filter the derivative of the force
+        self.dt_Fext_z_filtered = self.simulate_rt_filter(self.dt_Fext_z_raw, passband, 'bandpass') # Bandpass filter the derivative of the force
         # get displacements
-        self.displacement = np.array(ee_positions['z'])
-        self.displacement = self.displacement - self.displacement[0]  # Set initial displacement to zero
+        self.displacement = np.array(list(ee_positions.values())).T
+        print("displacement shape is ", self.displacement.shape)
+        self.displacement = self.displacement - self.displacement[0, :]  # Set initial displacement to zero
+        sgn = np.sign(np.array(ee_positions['z']) - ee_positions['z'][0])
+        self.displacement = np.linalg.norm(self.displacement, axis=1) * sgn # Compute norm of displacement
+        self.offset = self.displacement[0]  # Store the initial offset
         # get velocities
         position_differences = np.diff(self.displacement)  # Differences between consecutive positions
-        self.velocities = np.concatenate(([0], position_differences / T)) * 100 # Norms divided by sampling time 
+        self.velocities = np.concatenate(([0], position_differences / T)) # Norms divided by sampling time 
 
 
-    def simulate_rt_bandpass_filter(self, signal_data, passband):
+    def simulate_rt_filter(self, signal_data, passband, type='bandpass'):
         # Apply real-time bandpass filter to the force data
         low, high = passband
-        self.bandpass_filter = RealTimeBandpassFilter(low, high, self.fs)
+        if type == 'bandpass':
+            self.filter = RealTimeBandpassFilter(low, high, self.fs)
+        elif type == 'lowpass':
+            self.filter = RealTimeLowpassFilter(low, self.fs) # use low frequency ~ 5Hz as cutoff
         filtered_signal = []
         for sample in signal_data:
-            y = self.bandpass_filter.filter_sample(sample)
+            y = self.filter.filter_sample(sample)
             filtered_signal.append(y)
 
         return np.array(filtered_signal)
@@ -78,8 +109,12 @@ class SpikeDetector:
        
         # Plot the displacement (Z-axis)
         # Plot linear regression results alongside position or force data
+           # Find the indices where velocities exceed the threshold
+        triggered_indexes, _ = detect_trigger(self.velocities)
+        # Plotting the metrics
         fig, axs = plt.subplots(6, 1, figsize=(18, 18), sharex=True)
 
+        # Plot the displacement (Z-axis)
         axs[0].plot(self.timestamps, self.displacement, label="Displacement (Z-axis)", color='blue')
         axs[0].set_xlabel("Timestamps")
         axs[0].set_ylabel("Displacement (Z)")
@@ -88,26 +123,39 @@ class SpikeDetector:
 
         # Plot the filtered force (Z-axis)
         axs[1].plot(self.timestamps, self.drilling_force, label="Force (Z-axis)", color='green')
+        ema_filtered_data = ema_filter(self.drilling_force, 0.01)
+        axs[1].plot(self.timestamps, ema_filtered_data, label="F filtered with EMA=0.1", color='black')
         axs[1].set_xlabel("Timestamps")
         axs[1].set_ylabel("Force (Z)")
         axs[1].legend()
         axs[1].grid(True)
 
+        # predict velocities from force 
+        predicted_velocity = [0]
+        for i in range (len(self.drilling_force) - 1):
+            prediction = self.velocities[i] + self.drilling_force[i] * 0.1
+            predicted_velocity.append(prediction)
+        # Plot the velocities (Z-axis)
         axs[2].plot(self.timestamps, self.velocities, label="Velocities_z", color='dodgerblue')
+        axs[2].plot(self.timestamps, predicted_velocity, label="predicted_velocities", color='green')
         axs[2].set_xlabel("Timestamps")
         axs[2].set_ylabel("Derivative_F (Z)")
         axs[2].legend()
         axs[2].grid(True)
-        # placeholder on no. 3
-        axs[3].plot(self.timestamps, self.simulate_rt_bandpass_filter(self.dt_Fext_z_raw, self.passband), label="Bandpass filtered F", color='purple')
+
+        # Plot the simulated bandpass filter data
+        filtered_data = self.simulate_rt_filter(self.drilling_force, self.passband, type='lowpass')
+        axs[3].plot(self.timestamps, filtered_data, label="Lowpass filtered F (cutoff 5 Hz)", color='purple')
         axs[3].set_xlabel("Timestamps")
-        axs[3].set_ylabel("Filtered DF (Z)")
+        axs[3].set_ylabel("Filtered Forces (Z)")
         axs[3].legend()
         axs[3].grid(True)
 
-        axs[4].plot(self.timestamps, self.dt_Fext_z_raw, label="F_ext_dt (Z-axis)", color='black')
+        # Plot the external force derivative (Z-axis)
+        ema_filtered_data = ema_filter(self.drilling_force, 0.1)
+        axs[4].plot(self.timestamps, ema_filtered_data, label="F filtered with EMA=0.1", color='black')
         axs[4].set_xlabel("Timestamps")
-        axs[4].set_ylabel("F_ext_dt")
+        axs[4].set_ylabel("F EMA filtered")
         axs[4].legend()
         axs[4].grid(True)
 
@@ -134,6 +182,11 @@ class SpikeDetector:
         axs[5].set_xlabel('Time [s]')
         axs[5].set_ylabel('Spectral Intensity')
         axs[5].legend()
+
+         # Add vertical dashed lines at the triggered indices in all plots
+        for ax in axs:
+            for idx in triggered_indexes:
+                ax.axvline(self.timestamps[idx], color='red', linestyle='--', alpha=0.7, label="Threshold Exceeded" if idx == triggered_indexes[0] else "")
 
         plt.tight_layout()
         plt.show()
