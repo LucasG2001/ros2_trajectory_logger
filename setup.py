@@ -20,9 +20,11 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-             'robot_trajectory_logger = robot_trajectory_logger.log_data:main',
-             'planner = robot_trajectory_logger.planner:main', 
-                'joint_optimizer = robot_trajectory_logger.ManipulabilityOptimizer:main',
+            'robot_trajectory_logger = robot_trajectory_logger.log_data:main',
+            'planner = robot_trajectory_logger.planner:main', 
+            'joint_optimizer = robot_trajectory_logger.ManipulabilityOptimizer:main',
+            'data_streamer = robot_trajectory_logger.data_streamer:main',
+            'detection_node = robot_trajectory_logger.detection_node:main',
         ],
     },
 )

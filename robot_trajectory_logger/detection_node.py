@@ -17,7 +17,7 @@ class BreakthroughDetection(Node):
         super().__init__('robot_trajectory_logger')
 
         # Add the Pose publisher
-        self.pose_publisher = self.create_publisher(Bool, 'cartesian_impedance_control/trigger', 10)
+        self.pose_publisher = self.create_publisher(Bool, 'cartesian_impedance_control/trigger', 1)
 
         # Create a service server for PlannerService
         self.srv = self.create_service(PlannerService, 'planner_service', self.handle_service)
@@ -27,24 +27,31 @@ class BreakthroughDetection(Node):
             FrankaRobotState,  # Replace with the correct message type for franka_robot_state
             '/franka_robot_state_broadcaster/robot_state',
             self.robot_state_callback,
-            10)
+            1)
+        
+        # subscription only when testing
+        self.subscription = self.create_subscription(
+            FrankaRobotState,  # Replace with the correct message type for franka_robot_state
+            '/data_streamer/displacement',
+            self.displacement_callback,
+            1)
         
           # Subscribe to the drilling force (already direction-corrected)
         self.subscription = self.create_subscription(
             Float64,  # Replace with the correct message type for franka_robot_state
             '/f_ext_desired',
-            self.drillng_force_callback,
-            10)
+            self.drilling_force_callback,
+            1)
         
           # Subscribe to the drilling velocity (already direction-corrected)
         self.subscription = self.create_subscription(
             Float64,  # Replace with the correct message type for franka_robot_state
             '/velocity_desired',
             self.velocity_callback,
-            10)
-        
+            1)
+        # initialize timer that calls our process for detecting breakthrough at at 1000Hz
+        self.process_timer = self.create_timer(1.0 / 1000.0, self.process_data)
         # Initialize state and variables
-        self.time_start = time.time()
         self.counter = None
         self.velocity = 0
         self.velocity_buffer = deque([0.0] * 10, maxlen=10) # FIFO buffer for velocity
@@ -72,15 +79,8 @@ class BreakthroughDetection(Node):
         # buffer for measurements
         self.X_train = np.zeros([self.refit_interval, self.feature_size])  # n_samples x n_features
         self.y_train = np.zeros([self.refit_interval, 1])  # n_samples x n_targets
-            
-
-        timestamp = datetime.now().strftime("%Y_%m_%d_%H%M")
-        self.log_file = (f"robot_state_log_{timestamp}.json")
-        print(self.log_file)
-
         # Initialize force bias so this can be set via service
-        self.bias_force = np.array([0.0, 0.0, 0.0])
-
+        self.bias_force = None
     def handle_service(self, request, response):
         command = request.command
         match command:
@@ -89,6 +89,7 @@ class BreakthroughDetection(Node):
                 if self.f_ext is not None:
                     self.bias_force = np.array([self.f_ext.force._x, self.f_ext.force._y, self.f_ext.force._z])
                     self.initial_position = self.ee_pos
+                    self.displacement = 0 # initialize displacement
                     self.counter = 0 # initialize counter
                     self.lower_bound = -1
                     self.upper_bound = 1
@@ -104,14 +105,18 @@ class BreakthroughDetection(Node):
         return response
     
     def robot_state_callback(self, msg: FrankaRobotState):
-        self.f_ext = msg._o_f_ext_hat_k._wrench  # Assuming this is the correct attribute
         self.ee_pos = np.array([msg.o_t_ee._pose._position._x, msg.o_t_ee._pose._position._y, msg.o_t_ee._pose._position._z])
         if self.initial_position is not None:
             self.displacement = np.linalg.norm(self.ee_pos - self.initial_position)
 
+    def displacement_callback(self, msg: Float64):
+        self.displacement = msg.data
+        # self.get_logger().info(f"Displacement: {self.displacement}")
+
     def drilling_force_callback(self, msg: Float64):
-        self.f_ext = msg.data
+        self.f_ext = msg.data - self.bias_force
         # self.get_logger().info(f"Drilling force: {self.f_ext}")
+
     def velocity_callback(self, msg: Float64):
         self.velocity = msg.data
         # check for anomaly
@@ -134,7 +139,7 @@ class BreakthroughDetection(Node):
         # self.get_logger().info(f"Velocity: {self.velocity}")
 
     def process_data(self):
-        if (self.logging_active == True and self.initial_position is not None):
+        if (self.logging_active == True):
             """
             Perform Gaussian Process Regression with self-correlation on the force magnitude data using GPy library. 
             Simulates a Datastream of the Force and uses the previous values to predict the next value(s).
@@ -145,7 +150,6 @@ class BreakthroughDetection(Node):
             # Storage for predictions and Logging 
             means = []
             sigmas = []
-            anomalies = []
             times = []
             # Feature vector: last `feature size` points
             feature_vector = list(self.velocity_buffer)
