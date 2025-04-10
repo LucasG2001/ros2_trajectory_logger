@@ -44,41 +44,61 @@ def homogenous_transform_to_pose(transform):
 
     return pose_vector, quaternion
 
+
 class RobotTrajectoryLogger(Node):
 
     def __init__(self):
         super().__init__('robot_trajectory_logger')
 
+        # Add the Pose publisher
+        self.pose_publisher = self.create_publisher(Pose, 'cartesian_impedance_control/reference_pose', 10)
+
         # Create a service server for PlannerService
         self.srv = self.create_service(PlannerService, 'planner_service', self.handle_service)
 
-        # Timer for logging robot state at 1000 Hz
-        self.timer_log_data = self.create_timer(1.0 / 1000.0, self.log_data)
+        # Timer for sending trajectory at 20Hz --> TURNED OFF!!
+        # self.timer_send_trajectory = self.create_timer(1.0 / 0.3, self.send_trajectory)
+
+        # Timer for logging robot state at 500Hz
+        self.timer_log_data = self.create_timer(1.0 / 500.0, self.log_data)
 
         # Subscribe to the robot state
         self.subscription = self.create_subscription(
             FrankaRobotState,  # Replace with the correct message type for franka_robot_state
             '/franka_robot_state_broadcaster/robot_state',
             self.robot_state_callback,
-            1)
+            10)
         
-        self.dt_Fext_desired_subscription = self.create_subscription(
-            Float64,
-            '/dt_Fext_desired',
-            self.dt_Fext_desired_callback,
-            1)
+        # Subscribe to JacobianEE
+        self.jacobianEE_subscription = self.create_subscription(
+            JacobianEE,
+            '/jacobianEE',
+            self.jacobianEE_callback,
+            10)
         
-        self.fext_desired_subscription = self.create_subscription(
-            Float64,
-            '/fext_desired',
-            self.fext_desired_callback,
-            1)
+        """ self.joint_z_acceleration_subscription = self.create_subscription(
+            JointEEState,
+            '/jointEEState',
+            self.joint_z_acceleration_callback,
+            10) """
         
-        self.velocity_desired_subscription = self.create_subscription(
+        self.dt_fext_z_subscription = self.create_subscription(
             Float64,
-            '/velocity_desired',
-            self.velocity_desired_callback,
-            1)
+            '/dt_fext_z',
+            self.dt_fext_z_callback,
+            10)
+        
+        self.D_z_subscription = self.create_subscription(
+            Float64,
+            '/D_z',
+            self.D_z_callback,
+            10)
+        
+        self.velocity_error_subscription = self.create_subscription(
+            Float64,
+            '/velocity_error',
+            self.velocity_error_callback,
+            10)
 
         # Initialize state and variables
         self.time_start = time.time()
@@ -95,12 +115,12 @@ class RobotTrajectoryLogger(Node):
         self.ee_euler_angles = quaternion_to_euler([self.ee_pose.orientation._x, self.ee_pose.orientation._y, self.ee_pose.orientation._z, self.ee_pose.orientation._w])
         self.reference_euler_angles = quaternion_to_euler([self.reference_pose.orientation._x, self.reference_pose.orientation._y, self.reference_pose.orientation._z, self.reference_pose.orientation._w])
         self.jacobianEE = None
+        self.dtjacobianEE = None
         self.joint_velocities = None
         self.joint_z_acceleration = 0.0
-        self.dt_Fext_desired = 0.0
+        self.dt_Fext_z = 0.0
+        self.D_z = 0.0
         self.velocity_error = 0.0
-        self.f_ext_desired = 0.0
-        self.velocity_desired = 0.0
 
         self.logging_active = False
 
@@ -127,6 +147,18 @@ class RobotTrajectoryLogger(Node):
             case _:
                 response.success = False
         return response
+    
+    def send_trajectory(self):
+        current_time = time.time() - self.time_start
+        amplitude = 0.3
+        frequency = 0.1
+
+        # Generate sinusoidal trajectory in X direction
+        self.reference_pose.position.x = 0.5 + 0*  0.2 * np.sin(2 * np.pi * 0.2 * current_time)
+        self.reference_pose.position.y = amplitude * np.sin(2 * np.pi * frequency * current_time)
+        self.reference_pose.position.z = 0.4 +  0 * amplitude * np.sin(2 * np.pi * 0.2 * current_time)
+        self.get_logger().info(f'Sent trajectory Point at time: {current_time:.2f} seconds')
+        # self.pose_publisher.publish(self.reference_pose)
 
     def robot_state_callback(self, msg: FrankaRobotState):
         self.f_ext = msg._o_f_ext_hat_k._wrench  # Assuming this is the correct attribute
@@ -141,14 +173,21 @@ class RobotTrajectoryLogger(Node):
             self.get_logger().error("Joint velocities not found in FrankaRobotState message.")
             self.joint_velocities = []
 
-    def dt_Fext_desired_callback(self, msg: Float64):
-        self.dt_Fext_desired = msg.data
+    def jacobianEE_callback(self, msg: JacobianEE):
+        self.jacobianEE = msg.jacobianee
+        self.dtjacobianEE = msg.dtjacobianee
+
+    def dt_fext_z_callback(self, msg: Float64):
+        self.dt_Fext_z = msg.data
+
+    """ def joint_z_acceleration_callback(self, msg: JointEEState):
+        self.joint_z_acceleration = msg.jointzacceleration """
     
-    def fext_desired_callback(self, msg: Float64):
-        self.f_ext_desired = msg.data
-    
-    def velocity_desired_callback(self, msg: Float64):
-        self.velocity_desired = msg.data
+    def D_z_callback(self, msg: Float64):
+        self.D_z = msg.data
+
+    def velocity_error_callback(self, msg: Float64):
+        self.velocity_error = msg.data
 
     
     def log_data(self):
@@ -206,11 +245,11 @@ class RobotTrajectoryLogger(Node):
                 }
             },
             "measured_joint_velocities": joint_velocities_data,
-            "dt_Fext_desired": self.dt_Fext_desired,
-            "velocity_error": self.velocity_error,
-            "f_ext_desired": self.f_ext_desired,
-            "velocity_desired": self.velocity_desired,
-            "position_desired": self.position_desired
+            "jacobianEE": jacobianEE_data,
+            "dtjacobianEE": dtjacobianEE_data,
+            "dt_Fext_z": self.dt_Fext_z,
+            "D_z": self.D_z,
+            "velocity_error": self.velocity_error
 
         }
 

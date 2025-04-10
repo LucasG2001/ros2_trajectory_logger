@@ -5,12 +5,26 @@ from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import Ridge
 from scipy.signal import butter, filtfilt
 from scipy.ndimage import gaussian_filter
-from scipy.stats import norm
-from scipy.spatial.transform import Rotation as R
+import os
+from robot_trajectory_logger.filters import ema_filter
 
-
-def load_log_file(filename):
+def extract_data(filename, sampling_rate = 500, time_window = 8):
     """
+    Extract data from the list of dictionaries.
+
+    Parameters:
+    - data (list): List of dictionaries containing the log data.
+    - time_window (int): Time window in seconds. Data after this time will be ignored.
+    - sampling_rate (int): Sampling rate in Hz.
+    Returns:
+    - timestamps (list): List of timestamps.
+    - forces (dict): Dictionary of forces (x, y, z).
+    - torques (dict): Dictionary of torques (x, y, z).
+    - reference_positions (dict): Dictionary of reference positions (x, y, z).
+    - euler_angles (dict): Dictionary of Euler angles (roll, pitch, yaw).
+    - ee_positions (dict): Dictionary of end-effector positions (x, y, z).
+    - ee_orientations (dict): Dictionary of end-effector orientations (roll, pitch, yaw).
+
     Load the JSON log file.
 
     Parameters:
@@ -21,26 +35,10 @@ def load_log_file(filename):
     """
     with open(filename, 'r') as file:
         data = [json.loads(line.strip()) for line in file]
-    return data
 
-def extract_data(data):
-    """
-    Extract data from the list of dictionaries.
-
-    Parameters:
-    - data (list): List of dictionaries containing the log data.
-
-    Returns:
-    - timestamps (list): List of timestamps.
-    - forces (dict): Dictionary of forces (x, y, z).
-    - torques (dict): Dictionary of torques (x, y, z).
-    - reference_positions (dict): Dictionary of reference positions (x, y, z).
-    - euler_angles (dict): Dictionary of Euler angles (roll, pitch, yaw).
-    - ee_positions (dict): Dictionary of end-effector positions (x, y, z).
-    - ee_orientations (dict): Dictionary of end-effector orientations (roll, pitch, yaw).
-    """
-
-    timestamps = list(range(len(data)))
+    cutoff_index = min(sampling_rate * time_window, len(data)-1)
+    
+    timestamps = list(range(int(cutoff_index)))
 
     forces = {'x': [], 'y': [], 'z': []}
     torques = {'x': [], 'y': [], 'z': []}
@@ -48,16 +46,15 @@ def extract_data(data):
     euler_angles = {'roll': [], 'pitch': [], 'yaw': []}
     ee_positions = {'x': [], 'y': [], 'z': []}
     ee_orientations = {'roll': [], 'pitch': [], 'yaw': []}
-    accelerations = {'x': [], 'y': [], 'z': []}
-    joint_velocities = [] 
-    jacobianEE = []
-    dtjacobianEE = []
     dtFextz = []
+    Dz = []
+    vel_error = []
     f_ext_desired = []
-    velocity_desired = []
-    displacement_desired = []
 
-    for entry in data:
+    for i, entry in enumerate(data):
+        if i >= cutoff_index:
+            break # Stop processing data after the time window
+        # Extract force data
         # Extract force data
         forces['x'].append(entry['f_ext']['force']['x'])
         forces['y'].append(entry['f_ext']['force']['y'])
@@ -91,16 +88,16 @@ def extract_data(data):
         # Extract dtFextz
         dtFextz.append(entry['dt_Fext_z'])
 
+        # Extract D_z
+        Dz.append(entry['D_z'])
+
+        # Extract velocity error
+        vel_error.append(entry['velocity_error'])
+
         # Extract f_ext_desired
         f_ext_desired.append(entry['f_ext_desired'])
 
-        # Extract velocity desired
-        velocity_desired.append(entry['velocity_desired'])
-
-        # Extract displacement desired
-        displacement_desired.append(entry['position_desired'])
-
-    return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations,dtFextz, f_ext_desired, velocity_desired, displacement_desired
+    return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations,dtFextz, Dz, vel_error, f_ext_desired
 
 def perform_linear_regression(x, F_ext):
     """
@@ -182,26 +179,6 @@ def butter_band_filter(data, high,low, fs, order):
 
     return filtered_data
 
-def low_pass_filter(data, cutoff, fs, order=3):
-    """
-    Apply a Butterworth low-pass filter to the data.
-
-    Parameters:
-    - data (dict): Dictionary of data to filter.
-    - cutoff (float): Cutoff frequency in Hz.
-    - fs (int): Sampling rate in Hz.
-    - order (int): Order of the filter.
-
-    Returns:
-    - Dictionary of filtered data.
-    """
-    filtered_data = {}
-    
-    b, a = butter(order, cutoff / (fs / 2), btype='low')
-    filtered_data = filtfilt(b, a, data)
-
-    return filtered_data
-
 def plot_force_fft(data, sampling_rate):
     """
     Plot the FFT of the force data.
@@ -224,216 +201,76 @@ def plot_force_fft(data, sampling_rate):
     plt.tight_layout()
     plt.show()
 
-def compute_displacement(pose_x,pose_y,pose_z):
-    """
-    Compute the total displacement from the first position.
-    
-    Parameters:
-    - pose_x (list): List of x-coordinates.
-    - pose_y (list): List of y-coordinates.
-    - pose_z (list): List of z-coordinates.
-    
-    Returns:
-    - displacement_total (np.array): Total displacement from the first position.
-    """
-
-    # save the first position in z direction
-    initial_z_pose = pose_z[0]
-
-    # initialize the displacement array
-    displacement_total = np.zeros(len(pose_z))
-
-    # if the difference between the current z position and the initial z position is greater than 0
-    for i in range(0, len(pose_z)-1):
-        displacement_total[i] = np.sqrt(
-            (pose_x[i] - pose_x[0])**2 + 
-            (pose_y[i] - pose_y[0])**2 + 
-            (pose_z[i] - pose_z[0])**2
-        )
-        if pose_z[i] - initial_z_pose > 0:
-            displacement_total[i] = 0
-
-    return displacement_total
-
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2025_02_28_1051.json'
-    
-    # Load and process the log file
-    data = load_log_file(logfile)
-    timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFextz, f_ext_desired, velocity_desired, displacement_desired = extract_data(data)
+    logfile = 'porous_bone/robot_state_log_2025_02_04_0825.json'
+    folder_path = "porous_bone"
+    for filename in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, filename)
+        if os.path.isfile(file_path):  # Ensure it's a file
+            print(f"Processing file: {file_path}")
 
-    # Convert lists to numpy arrays for further processing
-    force_z = np.array(forces['z'])
-    displacement_z = np.array(ee_positions['z'])
+        timestamps, forces, reference_positions, euler_angles, ee_positions, ee_orientations, dtFextz = extract_data(file_path)
 
-    sampling_rate = 1000  # 500 Hz update rate
+        # Convert lists to numpy arrays for further processing
+        force_z = np.array(forces['z'])
+        displacement_z = np.array(ee_positions['z'])
+        sampling_rate = 500  # 500 Hz update rate
+        # Define window size (40 measurements) and step size (you can use 40 for non-overlapping)
+        window_size = 3  # Number of measurements per window
+        step_size = 1    # Move 40 points at a time (non-overlapping)
+        velocities_z = 500 * np.diff(ee_positions['z'], prepend=ee_positions['z'][1])
+        # low pass filter
+        velocities_z = ema_filter(velocities_z, alpha=0.1)
+        acceleration_z = 500 * np.diff(velocities_z, prepend=velocities_z[1])
+        acceleration_z = ema_filter(acceleration_z, alpha=0.1)
 
-    # Define window size (40 measurements) and step size (you can use 40 for non-overlapping)
-    window_size = 3  # Number of measurements per window
-    step_size = 1    # Move 40 points at a time (non-overlapping)
+        force_derivative = abs(500 * np.diff(force_z, prepend=force_z[1]))
 
-    velocities_z = 1000 * np.diff(ee_positions['z'], prepend=ee_positions['z'][1])
-     # low pass filter
-    for i in range (0, len(velocities_z)-1):
-       velocities_z[i+1] = velocities_z[i] * 0.9 + 0.1 * velocities_z[i+1]
-    
-    acceleration_desired = 1000 * np.diff(velocity_desired, prepend=velocity_desired[1])
+        # Plot linear regression results alongside position or force data
+        fig, axs = plt.subplots(5, 1, figsize=(18, 18), sharex=True)
 
+        delta = -force_z / velocities_z
 
-    for i in range (0, len(acceleration_desired)-1):
-       acceleration_desired[i+1] = acceleration_desired[i] * 0.9 + 0.1 * acceleration_desired[i+1]
-       
-    #low pass filter the acceleration
-    # acceleration_desired = low_pass_filter(acceleration_desired, 7, sampling_rate)
-
-    # EMA filter the acceleration
+        # Clip delta values to be within the range [-1700, 1700]
+        delta = np.clip(delta, -1700, 1700)
 
 
-    for i in range(0, len(acceleration_desired)):
-        if acceleration_desired[i] > 2:
-            acceleration_desired[i] = 2
-        if acceleration_desired[i] < -2:
-            acceleration_desired[i] = -2
 
-    force_derivative = 1000 * np.diff(force_z, prepend=force_z[1])
+        # Plot the displacement (Z-axis)
+        axs[0].plot(timestamps, displacement_z, label="Displacement (Z-axis)", color='blue')
+        axs[0].axhline(y=displacement_z[0] - 0.025, color='black', linestyle='--', label="Breakthrough")  # Added line
+        axs[0].axhline(y=displacement_z[0] - 0.00625, color='black', linestyle='--', label="Corticalis1")  # Added line
+        axs[0].axhline(y=displacement_z[0] - 3*0.00625, color='black', linestyle='--', label="Corticalis2")  # Added line
+        axs[0].set_xlabel("Timestamps")
+        axs[0].set_ylabel("Displacement (Z)")
+        axs[0].legend()
+        axs[0].grid(True)
 
-    #low pass filter the force derivative
-    for i in range (0, len(force_derivative)-1):
-         force_derivative[i+1] = force_derivative[i] * 0.9 + 0.1 * force_derivative[i+1]
+        # Plot the filtered force (Z-axis)
+        axs[1].plot(timestamps, force_z, label="Force (Z-axis)", color='green')
+        axs[1].set_xlabel("Timestamps")
+        axs[1].set_ylabel("Force (Z)")
+        axs[1].legend()
+        axs[1].grid(True)
 
-    fig, axs = plt.subplots(6, 1, figsize=(18, 18), sharex=True)
+        axs[2].plot(timestamps, velocities_z, label="Velocities_z", color='blue')
+        axs[2].set_xlabel("Timestamps")
+        axs[2].set_ylabel("Derivative_F (Z)")
+        axs[2].legend()
+        axs[2].grid(True)
 
-    delta = -force_z / velocities_z
+        axs[3].plot(timestamps, acceleration_z, label="Acceleration (Z-axis)", color='blue')
+        axs[3].set_xlabel("Timestamps")
+        axs[3].set_ylabel("Acceleration (Z)")
+        axs[3].legend()
+        axs[3].grid(True)
 
-    # Clip delta values to be within the range [-1700, 1700]
-    delta = np.clip(delta, -1700, 1700)
+        axs[4].plot(timestamps, dtFextz, label="F_ext_dt (Z-axis)", color='blue')
+        axs[4].set_xlabel("Timestamps")
+        axs[4].set_ylabel("F_ext_dt")
+        axs[4].legend()
+        axs[4].grid(True)
 
-    # Convert positions to numpy arrays
-    ee_positions_x = np.array(ee_positions['x'])
-    ee_positions_y = np.array(ee_positions['y'])
-    ee_positions_z = np.array(ee_positions['z'])
-
-    # Convert Euler angles to Rotation objects
-    rotations = R.from_euler('xyz', np.column_stack((ee_orientations['roll'],
-                                                    ee_orientations['pitch'],
-                                                    ee_orientations['yaw'])), degrees=False)
-
-    # Reference orientation at index 1000
-    ref_rotation = rotations[0]
-
-    # Compute relative rotations
-    relative_rotations = ref_rotation.inv() * rotations
-
-    # Get angle (in radians) of each relative rotation
-    orientation_error = relative_rotations.magnitude()
-
-    # convert to degrees
-    orientation_error = np.degrees(orientation_error)
-
-    # Compute total displacement from the first position
-    displacement_total = np.sqrt(
-    (ee_positions_x - ee_positions_x[0])**2 + 
-    (ee_positions_y - ee_positions_y[0])**2 + 
-    (ee_positions_z - ee_positions_z[0])**2
-    )
-
-    displacement_total = compute_displacement(ee_positions_x,ee_positions_y,ee_positions_z)
-
-    # Plot the displacement (Z-axis)
-    axs[0].plot(timestamps, displacement_total, label="Displacement", color='blue')
-    axs[0].set_xlabel("Timestamps")
-    axs[0].set_ylabel("Displacement [mm]")
-    axs[0].legend()
-    axs[0].grid(True)
-
-    # Plot the filtered force (desired-axis)
-    axs[1].plot(timestamps, f_ext_desired, label="Force", color='green')
-    axs[1].set_xlabel("Timestamps")
-    axs[1].set_ylabel("Force [N]")
-    axs[1].legend()
-    axs[1].grid(True)
-
-    axs[2].plot(timestamps, dtFextz, label="dt_Force", color='red')
-    axs[2].set_xlabel("Timestamps")
-    axs[2].set_ylabel("dt_Force [N/s]")
-    axs[2].legend()
-    axs[2].grid(True)
-
-    axs[3].plot(timestamps, velocity_desired, label="vel", color='orange')
-    axs[3].set_xlabel("Timestamps")
-    axs[3].set_ylabel("Velocity EE [m/s]")
-    axs[3].legend()
-    axs[3].grid(True)
-
-    axs[4].plot(timestamps, acceleration_desired, label="acc", color='magenta')
-    axs[4].set_xlabel("Timestamps")
-    axs[4].set_ylabel("Acceleration EE [m/s^2]")
-    axs[4].legend()
-    axs[4].grid(True)
-
-    axs[5].plot(timestamps, orientation_error, label="orientation error", color='orange')
-    axs[5].set_xlabel("Timestamps")
-    axs[5].set_ylabel("Orientation Error")
-    axs[5].legend()
-    axs[5].grid(True)
-
-    # # Plot the linear regression results (F_h and k for the Z-axis)
-    # axs[2].plot(window_start_timestamps, F_h_z_list, label="F_h (Z-axis)", color='orange')
-    # axs[2].plot(window_start_timestamps, k_z_list, label="k (Stiffness Z-axis)", color='red')
-    # axs[2].set_xlabel("Timestamps")
-    # axs[2].set_ylabel("Linear Regression Output")
-    # axs[2].legend()
-    # axs[2].grid(True)
-
-    # axs[3].plot(window_start_timestamps, smoothed_values_k_z_derivate, label="Derivative k (Z-axis)", color='blue')
-    # axs[3].set_xlabel("Timestamps")
-    # axs[3].set_ylabel("Derivative_k (Z)")
-    # axs[3].legend()
-    # axs[3].grid(True) 
-
-    """ axs[2].plot(timestamps, velocity_desired, label="Velocities_desired", color='blue')
-    axs[2].set_xlabel("Timestamps")
-    axs[2].set_ylabel("Velocity")
-    axs[2].legend()
-    axs[2].grid(True)
-
-    axs[3].plot(timestamps, acceleration_z, label="Acceleration (Z-axis)", color='blue')
-    axs[3].set_xlabel("Timestamps")
-    axs[3].set_ylabel("Acceleration (Z)")
-    axs[3].legend()
-    axs[3].grid(True) """
-
-    """ axs[2].plot(timestamps, dtFextz, label="F_ext_dt", color='blue')
-    axs[2].set_xlabel("Timestamps")
-    axs[2].set_ylabel("F_ext_dt [N/s]")
-    axs[2].legend()
-    axs[2].grid(True) """
-    
-
-    """     difference_array = []
-
-    desired_value = -4.5
-
-    # subtract the deisred value from all values in the dt_Fext_z array and save the new values in the difference_array
-    for value in f_ext_desired:
-        difference_array.append(abs(value - desired_value))
-    
-    # find the index of the second smallest value in the difference_array
-    index = np.argsort(difference_array)[2]
-
-    # at my index value set a red cross in the plot
-    axs[1].plot(index, f_ext_desired[index], 'rx')
-
-    # I want to draw a vertical dotted line at the index value in all plots
-    for ax in axs:
-        ax.axvline(index, color='k', linestyle='--') 
-
-    print(dtFextz[index])"""
-    
-
-    plt.tight_layout()
-    plt.show()
-
-    plot_force_fft(acceleration_desired, sampling_rate)
-
+        plt.tight_layout()
+        plt.show()
