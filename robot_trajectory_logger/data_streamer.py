@@ -60,19 +60,19 @@ def main(args=None):
     sampling_frequency = 1000    
     cutoff_time = 10.5
     passband = (5, 50)
-    file_paths = []
-    for filename in os.listdir(folder_path):
-        file_path = os.path.join(folder_path, filename)
-        if os.path.isfile(file_path):  # Ensure it's a file
-            print(f"adding file: {file_path}")
-            # hard coded file paths for testing
-            file_path = "/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/Logs/robot_state_log_2025_02_28_1402.json"
-            file_paths.append(file_path)
-            print(f"File paths: {file_paths[0]}")
+    # file_paths = []
+    # for filename in os.listdir(folder_path):
+    #     file_path = os.path.join(folder_path, filename)
+    #     if os.path.isfile(file_path):  # Ensure it's a file
+    #         #print(f"adding file: {file_path}")
+    #         # hard coded file paths for testing
+    #         file_path = "/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/Logs/robot_state_log_2025_02_28_1402.json"
+    #         file_paths.append(file_path)
+    #         #print(f"File paths: {file_paths[0]}")
 
-
+    file_path = "/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/Logs/robot_state_log_2025_02_28_1402.json"
     # show the file path name
-    node = DataStreamer(file_paths[0], sampling_frequency, cutoff_time, passband)
+    node = DataStreamer(file_path, sampling_frequency, cutoff_time, passband)
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()

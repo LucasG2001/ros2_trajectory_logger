@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from franka_msgs.msg import FrankaRobotState
 from messages_fr3.srv import PlannerService
-from std_msgs.msg import Float64, Bool
+from std_msgs.msg import Float64, Bool, Float64MultiArray
 import numpy as np
 import json
 from datetime import datetime
@@ -11,6 +11,7 @@ import time
 from scipy.spatial.transform import Rotation as R
 from collections import deque
 
+
 class BreakthroughDetection(Node):
 
     def __init__(self):
@@ -18,6 +19,8 @@ class BreakthroughDetection(Node):
 
         # Add the Pose publisher
         self.pose_publisher = self.create_publisher(Bool, 'cartesian_impedance_control/trigger', 1)
+
+        self.gp_publisher = self.create_publisher(Float64MultiArray, '/gp_values', 1)
 
         # Create a service server for PlannerService
         self.srv = self.create_service(PlannerService, 'planner_service', self.handle_service)
@@ -81,7 +84,6 @@ class BreakthroughDetection(Node):
         self.y_train = np.zeros([self.refit_interval, 1])  # n_samples x n_targets
         # Initialize force bias so this can be set via service
         self.bias_force = 0.0  #!!! bias force set to zero when testing with the data_streamer node and pre-recorded data as these already have the bias force deducted!!!
-        
 
     def handle_service(self, request, response):
         command = request.command
@@ -127,6 +129,9 @@ class BreakthroughDetection(Node):
 
     def velocity_callback(self, msg: Float64):
         self.velocity = msg.data
+
+        self.get_logger().info(f"Velocity: {self.velocity}")
+
         # check for anomaly
         if self.has_triggered == True and self.velocity > 0.0: # reset trigger when velocity reaches 0 again
             self.has_triggered = False
@@ -168,26 +173,39 @@ class BreakthroughDetection(Node):
             # for logging
             means.append(mean_prediction)
             sigmas.append(sigma_prediction)
+
             # check for anomaly (change point)
             self.lower_bound = mean_prediction - 1.99 * sigma_prediction 
             self.upper_bound = mean_prediction + 1.99 * sigma_prediction
             
-          
+            # print calculated values all 1000ms
+            if self.counter % 1000 == 0:
+                self.get_logger().info(f"Mean: {mean_prediction}, Lower: {self.lower_bound}, Upper: {self.upper_bound}")
+                # print("Times:", times)
+                # print("Means:", means)
+                # print("Sigmas:", sigmas)
+            
+            # Publish GP values for live plotting
+            gp_values = Float64MultiArray()
+            gp_values.data = [mean_prediction, self.lower_bound, self.upper_bound]
+            self.gp_publisher.publish(gp_values)
+
             # Refit GP every `refit_interval` steps
             if self.counter % self.refit_interval == 0 and self.has_triggered == False:
                 # Update kernel hyperparameters
                 # Set new data and refit (same hyperparameters) but only on a subset of data
                 self.gp.set_XY(self.X_train[::subsampling_factor], self.y_train[::subsampling_factor])
                 self.gp.optimize()
-                print("Updated hyperparameters:\n", self.gp)
+                #print("Updated hyperparameters:\n", self.gp)
                 end_time = time.time()
                 times.append(end_time - start_time)
 
             self.counter += 1
             
-            print(f"Counter: {self.counter}")
+            # print(f"Counter: {self.counter}")
  
-        
+
+
      
 
 

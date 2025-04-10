@@ -24,7 +24,8 @@ setup(
              'planner = robot_trajectory_logger.planner:main', 
              'joint_optimizer = robot_trajectory_logger.ManipulabilityOptimizer:main',
              'data_streamer = robot_trajectory_logger.data_streamer:main',
-                'breakthrough_detection = robot_trajectory_logger.detection_node:main',   
+             'breakthrough_detection = robot_trajectory_logger.detection_node:main', 
+             'live_plotting = robot_trajectory_logger.live_plotting:main',  
         ],
     },
 )
