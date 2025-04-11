@@ -15,7 +15,7 @@ class DataStreamer(Node):
         super().__init__('robot_trajectory_logger')
 
         # Pose publishers
-        self.displacement_publisher = self.create_publisher(Float64, '/data_streamer/displacement', 1)       
+        self.displacement_publisher = self.create_publisher(Float64, '/displacement_value', 1)       
         self.f_ext_publisher = self.create_publisher(Float64, '/f_ext_desired', 1)
         self.velocity_publisher = self.create_publisher(Float64, '/velocity_desired', 1)
 
@@ -55,6 +55,11 @@ class DataStreamer(Node):
 
             #print(f"Published data at index {i}")
             self.counter += 1
+            # print the data every 1000ms
+            if self.counter % 1000 == 0:
+                # print displacement
+                self.get_logger().info(f"Displacement: {self.spike_detector.displacement[i]}")
+        
         else:
             i = self.counter
             #self.get_logger().info("End of data stream reached.")
