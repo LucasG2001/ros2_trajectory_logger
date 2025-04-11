@@ -84,8 +84,8 @@ class LivePlotting(Node):
             len(self.means),
             len(self.lower_bounds),
             len(self.upper_bounds),
-            len(self.velocity),
-            len(self.trigger_values)
+            len(self.velocity)
+            #len(self.trigger_values)
         )
 
         if min_len == 0:
