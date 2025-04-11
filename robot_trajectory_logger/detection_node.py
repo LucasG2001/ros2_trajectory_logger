@@ -130,7 +130,7 @@ class BreakthroughDetection(Node):
     def velocity_callback(self, msg: Float64):
         self.velocity = msg.data
 
-        self.get_logger().info(f"Velocity: {self.velocity}")
+        #self.get_logger().info(f"Velocity: {self.velocity}")
 
         # check for anomaly
         if self.has_triggered == True and self.velocity > 0.0: # reset trigger when velocity reaches 0 again

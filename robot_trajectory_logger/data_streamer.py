@@ -47,11 +47,18 @@ class DataStreamer(Node):
 
 
     def send_data(self):
-        i = self.counter
-        self.displacement_publisher.publish(Float64(data=self.spike_detector.displacement[i]))
-        self.f_ext_publisher.publish(Float64(data=self.spike_detector.drilling_force[i]))
-        self.velocity_publisher.publish(Float64(data=self.spike_detector.velocities[i]))
+        if self.counter < self.spike_detector.logfile_length:
+            i = self.counter
+            self.displacement_publisher.publish(Float64(data=self.spike_detector.displacement[i]))
+            self.f_ext_publisher.publish(Float64(data=self.spike_detector.drilling_force[i]))
+            self.velocity_publisher.publish(Float64(data=self.spike_detector.velocities[i]))
 
+            #print(f"Published data at index {i}")
+            self.counter += 1
+        else:
+            i = self.counter
+            #self.get_logger().info("End of data stream reached.")
+        
 
     
 def main(args=None):
@@ -74,7 +81,7 @@ def main(args=None):
     # show the file path name
     node = DataStreamer(file_path, sampling_frequency, cutoff_time, passband)
     rclpy.spin(node)
-    node.destroy_node()
+    node.destroy_node() 
     rclpy.shutdown()
 
 
