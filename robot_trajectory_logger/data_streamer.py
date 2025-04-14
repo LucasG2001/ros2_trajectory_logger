@@ -82,7 +82,7 @@ def main(args=None):
     #         file_paths.append(file_path)
     #         #print(f"File paths: {file_paths[0]}")
 
-    file_path = "/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/Logs/robot_state_log_2025_02_28_1402.json"
+    file_path = "/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/Logs/robot_state_log_2025_02_28_1011.json"
     # show the file path name
     node = DataStreamer(file_path, sampling_frequency, cutoff_time, passband)
     rclpy.spin(node)
