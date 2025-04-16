@@ -6,7 +6,7 @@ from franka_msgs.msg import FrankaRobotState
 from messages_fr3.srv import PlannerService
 from messages_fr3.msg import JacobianEE, JointEEState
 from std_srvs.srv import Trigger
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, Float64MultiArray, Bool
 import numpy as np
 import json
 from datetime import datetime
@@ -76,12 +76,6 @@ class RobotTrajectoryLogger(Node):
             self.jacobianEE_callback,
             10)
         
-        """ self.joint_z_acceleration_subscription = self.create_subscription(
-            JointEEState,
-            '/jointEEState',
-            self.joint_z_acceleration_callback,
-            10) """
-        
         self.dt_fext_z_subscription = self.create_subscription(
             Float64,
             '/dt_fext_z',
@@ -98,6 +92,18 @@ class RobotTrajectoryLogger(Node):
             Float64,
             '/velocity_error',
             self.velocity_error_callback,
+            10)
+        
+        self.gp_values_subscription = self.create_subscription(
+            Float64MultiArray,
+            '/gp_values',
+            self.gp_callback,
+            10)
+        
+        self.trigger_subscription = self.create_subscription(
+            Float64,
+            '/trigger',
+            self.trigger_callback,
             10)
 
         # Initialize state and variables
@@ -121,6 +127,10 @@ class RobotTrajectoryLogger(Node):
         self.dt_Fext_z = 0.0
         self.D_z = 0.0
         self.velocity_error = 0.0
+        self.means = 0.0
+        self.lower_bounds = 0.0
+        self.upper_bounds = 0.0
+        self.trigger_values = 0.0
 
         self.logging_active = False
 
@@ -179,9 +189,6 @@ class RobotTrajectoryLogger(Node):
 
     def dt_fext_z_callback(self, msg: Float64):
         self.dt_Fext_z = msg.data
-
-    """ def joint_z_acceleration_callback(self, msg: JointEEState):
-        self.joint_z_acceleration = msg.jointzacceleration """
     
     def D_z_callback(self, msg: Float64):
         self.D_z = msg.data
@@ -189,7 +196,24 @@ class RobotTrajectoryLogger(Node):
     def velocity_error_callback(self, msg: Float64):
         self.velocity_error = msg.data
 
-    
+    def gp_callback(self, msg: Float64MultiArray):
+        
+        mean = msg.data[0]
+        lower = msg.data[1]
+        upper = msg.data[2]
+
+        self.means = mean
+        self.lower_bounds = lower
+        self.upper_bounds = upper
+
+    def trigger_callback(self, msg: Bool):
+        # if the trigger is False, append a zero to the trigger_values list and if it is True, append a 1
+        if msg.data:
+            self.trigger_values = 1.0
+        else:
+            self.trigger_values = 0.0
+
+
     def log_data(self):
         if not self.logging_active:
             return
@@ -249,8 +273,11 @@ class RobotTrajectoryLogger(Node):
             "dtjacobianEE": dtjacobianEE_data,
             "dt_Fext_z": self.dt_Fext_z,
             "D_z": self.D_z,
-            "velocity_error": self.velocity_error
-
+            "velocity_error": self.velocity_error,
+            "means": self.means,
+            "lower_bounds": self.lower_bounds,
+            "upper_bounds": self.upper_bounds,
+            "trigger_values": self.trigger_values
         }
 
         # Log data to file

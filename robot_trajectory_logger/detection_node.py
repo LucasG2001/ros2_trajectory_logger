@@ -76,7 +76,7 @@ class BreakthroughDetection(Node):
         self.trigger_counter = 0 # counter for trigger messages
         # Initialize the Gaussian Process model
         # Define GP kernel (Sum of RBF and a Constant term)
-        self.kernel = GPy.kern.RBF(input_dim=self.feature_size,variance=1.0, lengthscale=np.ones(self.feature_size) * 1, ARD=True)
+        self.kernel = GPy.kern.RBF(input_dim=self.feature_size, variance=1.0, lengthscale=np.ones(self.feature_size) * 1, ARD=True)
         self.kernel.lengthscale.fix()
         self.kernel.variance.constrain_bounded(1e-2, 0.2)    # Variance between 0.5 and 10
         # Initialize GP model
@@ -127,8 +127,6 @@ class BreakthroughDetection(Node):
         self.displacement = msg.data
         # self.get_logger().info(f"Displacement: {self.displacement}")
         
-        
-
     def drilling_force_callback(self, msg: Float64):
         # self.get_logger().info(f"Force: {msg.data}")
         # self.get_logger().info(f"Bias_Force: {self.bias_force}")
@@ -137,51 +135,51 @@ class BreakthroughDetection(Node):
 
     def velocity_callback(self, msg: Float64):
         self.velocity = msg.data
-
         #self.get_logger().info(f"Velocity: {self.velocity}")
 
         # check for anomaly
-        if self.velocity < self.lower_bound or self.velocity > self.upper_bound:
-            # avoid false positives by only counting anomalies when inside the bone
-            # also avoid detecting anomalies when the process has not been fitted yet
-            if self.displacement < -0.002 and self.f_ext < 0.0 and self.velocity < 0.0: 
-                if self.has_triggered == False:
-                    self.has_triggered = True
-                    self.trigger_counter += 1
+        if (self.logging_active == True):
+            if self.velocity < self.lower_bound or self.velocity > self.upper_bound:
+                # avoid false positives by only counting anomalies when inside the bone
+                # also avoid detecting anomalies when the process has not been fitted yet
+                if self.displacement < -0.002 and self.f_ext < 0.0 and self.velocity < 0.0: 
+                    if self.has_triggered == False:
+                        self.has_triggered = True
+                        self.trigger_counter += 1
 
-                    if self.trigger_counter == 1:
-                        self.get_logger().info(f"Anomaly detected at {self.displacement} mm with force {self.f_ext} N and velocity {self.velocity} m/s")
-                    
-                    # send the trigger message once the second breakthrough is detected
-                    if self.trigger_counter > 1:
-                        self.get_logger().info(f"Second anomaly detected at {self.displacement} mm with force {self.f_ext} N and velocity {self.velocity} m/s")
-                        # publish trigger message
-                        trigger_msg = Bool()
-                        trigger_msg.data = True
-                        self.trigger_publisher.publish(trigger_msg)
+                        if self.trigger_counter == 1:
+                            self.get_logger().info(f"Anomaly detected at {self.displacement} mm with force {self.f_ext} N and velocity {self.velocity} m/s")
+                        
+                        # send the trigger message once the second breakthrough is detected
+                        if self.trigger_counter > 1:
+                            self.get_logger().info(f"Second anomaly detected at {self.displacement} mm with force {self.f_ext} N and velocity {self.velocity} m/s")
+                            # publish trigger message
+                            trigger_msg = Bool()
+                            trigger_msg.data = True
+                            self.trigger_publisher.publish(trigger_msg)
 
 
-        if self.trigger_counter <= 1:
-            trigger_msg = Bool()
-            trigger_msg.data = False
-            self.trigger_publisher.publish(trigger_msg)
-        else:
-            trigger_msg = Bool()
-            trigger_msg.data = True
-            self.trigger_publisher.publish(trigger_msg)
+            if self.trigger_counter <= 1:
+                trigger_msg = Bool()
+                trigger_msg.data = False
+                self.trigger_publisher.publish(trigger_msg)
+            else:
+                trigger_msg = Bool()
+                trigger_msg.data = True
+                self.trigger_publisher.publish(trigger_msg)
 
-        if self.has_triggered == True and self.velocity > 0.0: # reset trigger when velocity reaches 0 again
-            self.has_triggered = False
+            if self.has_triggered == True and self.velocity > 0.0: # reset trigger when velocity reaches 0 again
+                self.has_triggered = False
+                
+            # Store training data in buffer, refill for every interval
+            if self.displacement < -0.001: # has_triggered == False:
+                self.X_train[self.counter % self.refit_interval, :] = list(self.velocity_buffer)
+                self.y_train[self.counter % self.refit_interval, :] = np.array([[self.velocity]])
+
             
-        # Store training data in buffer, refill for every interval
-        if self.displacement < -0.001: # has_triggered == False:
-            self.X_train[self.counter % self.refit_interval, :] = list(self.velocity_buffer)
-            self.y_train[self.counter % self.refit_interval, :] = np.array([[self.velocity]])
-
-        
-        # update buffer
-        self.velocity_buffer.append(self.velocity)
-        # self.get_logger().info(f"Velocity: {self.velocity}")
+            # update buffer
+            self.velocity_buffer.append(self.velocity)
+            # self.get_logger().info(f"Velocity: {self.velocity}")
 
     def process_data(self):
         if (self.logging_active == True):
@@ -215,7 +213,7 @@ class BreakthroughDetection(Node):
                 self.get_logger().info(f"Mean: {mean_prediction}, Lower: {self.lower_bound}, Upper: {self.upper_bound}")
                 self.get_logger().info(f"Displacement: {self.displacement}")
                 self.get_logger().info(f"Drilling force: {self.f_ext}")
-                self.get_logger().info(f"Trigger: {self.has_triggered}")
+                # self.get_logger().info(f"Trigger: {self.has_triggered}")
                 # print("Times:", times)
                 # print("Means:", means)
                 # print("Sigmas:", sigmas)

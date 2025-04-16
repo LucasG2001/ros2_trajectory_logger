@@ -55,6 +55,10 @@ def extract_data(data):
     dtFext_desired = []
     f_ext_desired = []
     velocity_desired = []
+    gp_means = []
+    gp_lower_bounds = []
+    gp_upper_bounds = []
+    trigger_values = []
 
     for entry in data:
         # Extract force data
@@ -96,7 +100,15 @@ def extract_data(data):
         # Extract velocity desired
         velocity_desired.append(entry['velocity_desired'])
 
-    return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFext_desired, f_ext_desired, velocity_desired
+        # Extract gp data
+        gp_means.append(entry['means'])
+        gp_lower_bounds.append(entry['lower_bounds'])
+        gp_upper_bounds.append(entry['upper_bounds'])
+
+        # extract trigger values
+        trigger_values.append(entry['trigger_values'])
+
+    return timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFext_desired, f_ext_desired, velocity_desired, gp_means, gp_lower_bounds, gp_upper_bounds, trigger_values
 
 def butter_band_filter(data, high,low, fs, order):
     """
@@ -146,7 +158,7 @@ if __name__ == "__main__":
     
     # Load and process the log file
     data = load_log_file(logfile)
-    timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFext_desired, f_ext_desired, velocity_desired = extract_data(data)
+    timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFext_desired, f_ext_desired, velocity_desired, gp_means, gp_lower_bounds, gp_upper_bounds, trigger_values  = extract_data(data)
 
     sampling_rate = 1000  # 1000 Hz update rate
 
@@ -207,11 +219,11 @@ if __name__ == "__main__":
     axs[3].legend()
     axs[3].grid(True)
 
-    axs[4].plot(timestamps, orientation_error, label="orientation error", color='orange')
-    axs[4].set_xlabel("Timestamps")
-    axs[4].set_ylabel("Orientation Error")
-    axs[4].legend()
-    axs[4].grid(True)
+    # axs[4].plot(timestamps, orientation_error, label="orientation error", color='orange')
+    # axs[4].set_xlabel("Timestamps")
+    # axs[4].set_ylabel("Orientation Error")
+    # axs[4].legend()
+    # axs[4].grid(True)
     
 
     """     difference_array = []
