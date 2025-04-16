@@ -69,31 +69,6 @@ class RobotTrajectoryLogger(Node):
             self.robot_state_callback,
             10)
         
-        # Subscribe to JacobianEE
-        self.jacobianEE_subscription = self.create_subscription(
-            JacobianEE,
-            '/jacobianEE',
-            self.jacobianEE_callback,
-            10)
-        
-        self.dt_fext_z_subscription = self.create_subscription(
-            Float64,
-            '/dt_fext_z',
-            self.dt_fext_z_callback,
-            10)
-        
-        self.D_z_subscription = self.create_subscription(
-            Float64,
-            '/D_z',
-            self.D_z_callback,
-            10)
-        
-        self.velocity_error_subscription = self.create_subscription(
-            Float64,
-            '/velocity_error',
-            self.velocity_error_callback,
-            10)
-        
         self.gp_values_subscription = self.create_subscription(
             Float64MultiArray,
             '/gp_values',
@@ -106,6 +81,12 @@ class RobotTrajectoryLogger(Node):
             self.trigger_callback,
             10)
 
+        self.velocity_desired_subscription = self.create_subscription(
+            Float64,
+            '/velocity_desired',
+            self.velocity_desired_callback,
+            10)
+        
         # Initialize state and variables
         self.time_start = time.time()
         self.reference_pose = Pose()
@@ -131,6 +112,7 @@ class RobotTrajectoryLogger(Node):
         self.lower_bounds = 0.0
         self.upper_bounds = 0.0
         self.trigger_values = 0.0
+        self.velocity_desired = 0.0
 
         self.logging_active = False
 
@@ -182,7 +164,7 @@ class RobotTrajectoryLogger(Node):
         except AttributeError:
             self.get_logger().error("Joint velocities not found in FrankaRobotState message.")
             self.joint_velocities = []
-            
+
     def gp_callback(self, msg: Float64MultiArray):
         
         mean = msg.data[0]
