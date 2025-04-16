@@ -22,7 +22,7 @@ class BreakthroughDetection(Node):
 
         self.gp_publisher = self.create_publisher(Float64MultiArray, '/gp_values', 1)
 
-        self.trigger_publisher = self.create_publisher(Bool, '/trigger', 1)
+        self.trigger_publisher = self.create_publisher(Float64, '/trigger', 1)
 
         # Create a service server for PlannerService
         self.srv = self.create_service(PlannerService, 'planner_service', self.handle_service)
@@ -154,18 +154,18 @@ class BreakthroughDetection(Node):
                         if self.trigger_counter > 1:
                             self.get_logger().info(f"Second anomaly detected at {self.displacement} mm with force {self.f_ext} N and velocity {self.velocity} m/s")
                             # publish trigger message
-                            trigger_msg = Bool()
-                            trigger_msg.data = True
+                            trigger_msg = Float64()
+                            trigger_msg.data = 1.0
                             self.trigger_publisher.publish(trigger_msg)
 
 
             if self.trigger_counter <= 1:
-                trigger_msg = Bool()
-                trigger_msg.data = False
+                trigger_msg = Float64()
+                trigger_msg.data = 0.0
                 self.trigger_publisher.publish(trigger_msg)
             else:
-                trigger_msg = Bool()
-                trigger_msg.data = True
+                trigger_msg = Float64()
+                trigger_msg.data = 1.0
                 self.trigger_publisher.publish(trigger_msg)
 
             if self.has_triggered == True and self.velocity > 0.0: # reset trigger when velocity reaches 0 again
@@ -180,6 +180,9 @@ class BreakthroughDetection(Node):
             # update buffer
             self.velocity_buffer.append(self.velocity)
             # self.get_logger().info(f"Velocity: {self.velocity}")
+            if self.counter % 1000 == 0:
+                self.get_logger().info(f"Trigger_msg: {trigger_msg}")
+                # print("Velocity buffer:", self.velocity_buffer)
 
     def process_data(self):
         if (self.logging_active == True):

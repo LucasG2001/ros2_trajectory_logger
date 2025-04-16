@@ -102,7 +102,7 @@ def extract_data_gp(data):
 
 if __name__ == "__main__":
     # Path to your JSON log file
-    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/Logs/robot_state_log_2025_04_16_1402_gp_live.json'
+    logfile = '/home/nilsjohnson/franka_ros2_ws/src/ros2_trajectory_logger/robot_state_log_2025_04_16_1519.json'
     
     # Load and process the log file
     data = load_log_file(logfile)

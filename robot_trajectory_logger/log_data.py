@@ -6,7 +6,7 @@ from franka_msgs.msg import FrankaRobotState
 from messages_fr3.srv import PlannerService
 from messages_fr3.msg import JacobianEE, JointEEState
 from std_srvs.srv import Trigger
-from std_msgs.msg import Float64, Float64MultiArray, Bool
+from std_msgs.msg import Float64, Float64MultiArray
 import numpy as np
 import json
 from datetime import datetime
@@ -60,7 +60,7 @@ class RobotTrajectoryLogger(Node):
         # self.timer_send_trajectory = self.create_timer(1.0 / 0.3, self.send_trajectory)
 
         # Timer for logging robot state at 500Hz
-        self.timer_log_data = self.create_timer(1.0 / 500.0, self.log_data)
+        self.timer_log_data = self.create_timer(1.0 / 1000.0, self.log_data)
 
         # Subscribe to the robot state
         self.subscription = self.create_subscription(
@@ -175,16 +175,13 @@ class RobotTrajectoryLogger(Node):
         self.lower_bounds = lower
         self.upper_bounds = upper
 
-    def trigger_callback(self, msg: Bool):
-        # if the trigger is False, append a zero to the trigger_values list and if it is True, append a 1
-        if msg.data:
-            self.trigger_values = 1.0
-        else:
-            self.trigger_values = 0.0
+    def trigger_callback(self, msg: Float64):
+        self.trigger_values = msg.data
+        
     
     def velocity_desired_callback(self, msg: Float64):
         self.velocity_desired = msg.data
-        
+
 
 
     def log_data(self):
