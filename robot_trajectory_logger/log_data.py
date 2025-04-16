@@ -181,6 +181,10 @@ class RobotTrajectoryLogger(Node):
             self.trigger_values = 1.0
         else:
             self.trigger_values = 0.0
+    
+    def velocity_desired_callback(self, msg: Float64):
+        self.velocity_desired = msg.data
+        
 
 
     def log_data(self):
