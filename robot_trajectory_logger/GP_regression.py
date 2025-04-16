@@ -2,21 +2,11 @@ import json
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
-from RTFilters import RealTimeBandpassFilter
 from filters import moving_average_filter, compute_length_scale_from_fft, ema_filter, real_time_autocorrelation, plot_frequency_bands_over_time
 from SpikeDetector import SpikeDetector
-
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
-
 import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 from time import time
 import GPy
 from gaussian_on_slices import fit_gaussian_gp, autocorrellation_cpd
@@ -269,6 +259,7 @@ if __name__ == "__main__":
         file_path = os.path.join(folder_path, filename)
         if os.path.isfile(file_path):  # Ensure it's a file
             print(f"Processing file: {file_path}")
+        file_path = "Logs/robot_state_log_2025_02_28_1011.json"
         # Load data
         spike_detector = SpikeDetector(file_path, fs=sampling_frequency, time_window=cutoff_time, passband=passband) # read out metrics
         # spike_detector.plot_metrics()

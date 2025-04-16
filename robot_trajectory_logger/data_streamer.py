@@ -1,4 +1,4 @@
-from SpikeDetector import SpikeDetector
+from robot_trajectory_logger.SpikeDetector import SpikeDetector
 import numpy as np
 import rclpy
 from rclpy.node import Node

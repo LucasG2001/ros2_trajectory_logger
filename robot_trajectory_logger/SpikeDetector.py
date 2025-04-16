@@ -1,9 +1,5 @@
-import json
-import os
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
 from filters import ema_filter, moving_average_filter, normalize_array, compute_and_plot_stft, real_time_outlier_detection, plot_real_time_outliers, plot_spectral_intensity
 from RTFilters import RealTimeBandpassFilter, RealTimeLowpassFilter
 from linear_regression import extract_data

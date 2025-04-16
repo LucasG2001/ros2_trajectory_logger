@@ -4,8 +4,6 @@ from franka_msgs.msg import FrankaRobotState
 from messages_fr3.srv import PlannerService
 from std_msgs.msg import Float64, Bool
 import numpy as np
-import json
-from datetime import datetime
 import GPy
 import time
 from scipy.spatial.transform import Rotation as R
