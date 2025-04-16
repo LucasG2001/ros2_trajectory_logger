@@ -182,20 +182,7 @@ class RobotTrajectoryLogger(Node):
         except AttributeError:
             self.get_logger().error("Joint velocities not found in FrankaRobotState message.")
             self.joint_velocities = []
-
-    def jacobianEE_callback(self, msg: JacobianEE):
-        self.jacobianEE = msg.jacobianee
-        self.dtjacobianEE = msg.dtjacobianee
-
-    def dt_fext_z_callback(self, msg: Float64):
-        self.dt_Fext_z = msg.data
-    
-    def D_z_callback(self, msg: Float64):
-        self.D_z = msg.data
-
-    def velocity_error_callback(self, msg: Float64):
-        self.velocity_error = msg.data
-
+            
     def gp_callback(self, msg: Float64MultiArray):
         
         mean = msg.data[0]
@@ -268,12 +255,8 @@ class RobotTrajectoryLogger(Node):
                     "yaw": self.ee_euler_angles[2]
                 }
             },
-            "measured_joint_velocities": joint_velocities_data,
-            "jacobianEE": jacobianEE_data,
-            "dtjacobianEE": dtjacobianEE_data,
-            "dt_Fext_z": self.dt_Fext_z,
-            "D_z": self.D_z,
-            "velocity_error": self.velocity_error,
+
+            "velocity_desired": self.velocity_desired,
             "means": self.means,
             "lower_bounds": self.lower_bounds,
             "upper_bounds": self.upper_bounds,
