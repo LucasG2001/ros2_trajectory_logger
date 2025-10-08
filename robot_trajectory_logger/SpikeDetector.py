@@ -1,8 +1,12 @@
+import json
+import os
 import numpy as np
 import matplotlib.pyplot as plt
-from filters import ema_filter, moving_average_filter, normalize_array, compute_and_plot_stft, real_time_outlier_detection, plot_real_time_outliers, plot_spectral_intensity
-from RTFilters import RealTimeBandpassFilter, RealTimeLowpassFilter
-from linear_regression import extract_data
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
+from robot_trajectory_logger.filters import ema_filter, moving_average_filter, normalize_array, compute_and_plot_stft, real_time_outlier_detection, plot_real_time_outliers, plot_spectral_intensity
+from robot_trajectory_logger.RTFilters import RealTimeBandpassFilter, RealTimeLowpassFilter
+from robot_trajectory_logger.plot import load_log_file, extract_data
 from scipy.signal import spectrogram, stft, butter, freqz, lfilter
 
 """
@@ -38,13 +42,13 @@ class SpikeDetector:
         T = 1/fs # sampling period
         self.fs = fs # sampling frequency
         self.passband = passband # filtering passband
-        self.data_file = logfile
-        self.timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations,dtFextz, Dz, vel_error, f_ext_desired = extract_data(logfile, fs, time_window) # dt_-fext is already filtered
+        self.data_file = load_log_file(logfile)
+        self.timestamps, forces, torques, reference_positions, euler_angles, ee_positions, ee_orientations, dtFext_desired, f_ext_desired, velocity_desired = extract_data(self.data_file) # dt_-fext is already filtered
         self.timestamps = np.array(self.timestamps)
         self.orientations = np.array(euler_angles)
         # get drilling forces
         self.drilling_force = np.array(f_ext_desired)
-        self.dt_Fext_z = np.array(dtFextz)
+        self.dt_Fext_z = np.array(dtFext_desired)
         self.dt_Fext_z_raw = np.concatenate(([0], np.diff(self.dt_Fext_z) / T))
         self.dt_Fext_z_filtered = self.simulate_rt_filter(self.dt_Fext_z_raw, passband, 'bandpass') # Bandpass filter the derivative of the force
         # get displacements
@@ -56,7 +60,9 @@ class SpikeDetector:
         self.offset = self.displacement[0]  # Store the initial offset
         # get velocities
         position_differences = np.diff(self.displacement)  # Differences between consecutive positions
-        self.velocities = np.concatenate(([0], position_differences / T)) # Norms divided by sampling time 
+        self.velocities = np.concatenate(([0], position_differences / T)) # Norms divided by sampling time
+        #length of logfile
+        self.logfile_length = len(self.data_file) 
 
 
     def simulate_rt_filter(self, signal_data, passband, type='bandpass'):

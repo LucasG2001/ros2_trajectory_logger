@@ -5,9 +5,9 @@ from matplotlib.widgets import Slider
 from collections import deque
 from scipy.signal import spectrogram
 from scipy.fft import fft, fftfreq
-from helpers import update_plot
+from robot_trajectory_logger.helpers import update_plot
 from scipy.signal import lombscargle
-from tests import bandpass_filter_example, stft_spectogram_example
+from robot_trajectory_logger.tests import bandpass_filter_example, stft_spectogram_example
 
 """
 different filters for gaussian process regression

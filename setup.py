@@ -20,11 +20,14 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'robot_trajectory_logger = robot_trajectory_logger.log_data:main',
-            'planner = robot_trajectory_logger.planner:main', 
-            'joint_optimizer = robot_trajectory_logger.ManipulabilityOptimizer:main',
-            'data_streamer = robot_trajectory_logger.data_streamer:main',
-            'detection_node = robot_trajectory_logger.detection_node:main',
+             'robot_trajectory_logger = robot_trajectory_logger.log_data:main',
+             'joint_impedance_tester = robot_trajectory_logger.joint_impedance_tester:main',
+             'planner = robot_trajectory_logger.planner:main', 
+             'joint_optimizer = robot_trajectory_logger.ManipulabilityOptimizer:main',
+             'data_streamer = robot_trajectory_logger.data_streamer:main',
+             'breakthrough_detection = robot_trajectory_logger.detection_node:main', 
+             'live_plotting = robot_trajectory_logger.live_plotting:main',  
+             'send_csv_positions = robot_trajectory_logger.send_uprofiles:main',
         ],
     },
 )

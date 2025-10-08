@@ -2,11 +2,21 @@ import json
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
+from RTFilters import RealTimeBandpassFilter
 from filters import moving_average_filter, compute_length_scale_from_fft, ema_filter, real_time_autocorrelation, plot_frequency_bands_over_time
 from SpikeDetector import SpikeDetector
+
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+
 import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 from time import time
 import GPy
 from gaussian_on_slices import fit_gaussian_gp, autocorrellation_cpd
@@ -138,7 +148,7 @@ def perform_gp_velocity(displacement, velocities, f_magnitude, passband=(10, 50)
     # Parameters
     feature_size = 10  # feature size (number of previous states to use for prediction of next state)
     padding_dim = feature_size + 1 # zero pasdding when looking back in time
-    refit_interval = 200  # Refit every "refit_interval" steps
+    refit_interval = 100  # Refit every "refit_interval" steps
     no_samples_per_interval = 20
     subsampling_factor = refit_interval//no_samples_per_interval # subsampling factor for training data
     y_data = np.hstack([np.zeros(padding_dim), velocities])  # prepend zeros
@@ -165,7 +175,7 @@ def perform_gp_velocity(displacement, velocities, f_magnitude, passband=(10, 50)
     kernel.lengthscale.fix()
     kernel.variance.constrain_bounded(1e-2, 0.2)    # Variance between 0.5 and 10
     # Initialize GP model
-    gp = GPy.models.GPRegression(np.zeros((1, feature_size)), np.zeros((1, feature_size)), kernel, noise_var=1e-3)
+    gp = GPy.models.GPRegression(np.zeros((1, feature_size)), np.zeros((1, feature_size)), kernel, noise_var=1e-4)
     # Constrain noise variance
     #gp.Gaussian_noise.variance.constrain_bounded(6*1e-4, 1e-3)  # Noise variance between 1e-4 and 0.5
     gp.Gaussian_noise.variance.fix()  # Noise variance between 1e-4 and 0.5
@@ -215,20 +225,26 @@ def perform_gp_velocity(displacement, velocities, f_magnitude, passband=(10, 50)
 
     # Plot results
     fig, axs = plt.subplots(3, 1, figsize=(12, 16))
-    axs[0].plot(y_data, label="Original Velocity  Data", color="dodgerblue", alpha=0.6, linewidth=1.0)
+
+    # Top plot: Velocity + GP
+    axs[0].plot(y_data, label="Original Velocity Data", color="dodgerblue", alpha=0.6, linewidth=1.0)
     axs[0].plot(means, label="GP Mean", color="red", linewidth=2.0)
     axs[0].fill_between(np.arange(len(means)), means - 1.96 * sigmas, means + 1.96 * sigmas, 
-                     color="orange", alpha=0.3, label="95% Confidence Interval")
+                        color="orange", alpha=0.3, label="95% Confidence Interval")
     axs[0].scatter(anomalies, y_data[anomalies], color="black", label="Anomalies", zorder=3, s=3)
     axs[0].set_xlabel("Time Steps")
     axs[0].set_ylabel("Velocity")
-     # veolcity plot
+    axs[0].set_ylim([-0.2, 0.2])  # Limit y-axis to ±0.2
+    axs[0].legend()
+
+    # Middle plot: Forces
     axs[1].plot(forces, label="Forces", color="purple", linewidth=1.5)
     axs[1].set_xlabel("Time Steps")
     axs[1].set_ylabel("Forces")
     axs[1].set_title("Force Over Time")
     axs[1].legend()
-    # Displacement plot
+
+    # Bottom plot: Displacement
     axs[2].plot(displacement, label="Displacement", color="green", linewidth=1.5)
     axs[2].set_xlabel("Time Steps")
     axs[2].set_ylabel("Displacement")
@@ -236,13 +252,18 @@ def perform_gp_velocity(displacement, velocities, f_magnitude, passband=(10, 50)
     axs[2].legend()
 
     # Add vertical dashed lines in all subplots
-    for i in range(1, len(axs)):
-        ax = axs[i]
+    for ax in axs:
         for pos in anomalies:
             ax.axvline(pos, linestyle="dashed", color="black", alpha=0.7)
 
-    plt.title("GP Regression with Self-Correlation")
+    plt.suptitle("GP Regression with Self-Correlation")
+    fig.tight_layout(rect=[0, 0.03, 1, 0.95])
     fig.legend()
+
+    # Save the figure as SVG
+    fig.savefig("gp_regression_output.svg", format="svg")
+
+    # Display the plot
     plt.show()
 
 
@@ -259,8 +280,8 @@ if __name__ == "__main__":
         file_path = os.path.join(folder_path, filename)
         if os.path.isfile(file_path):  # Ensure it's a file
             print(f"Processing file: {file_path}")
-        file_path = "Logs/robot_state_log_2025_02_28_1011.json"
         # Load data
+        file_path = '/home/lucas/franka_ros2_ws/src/ros2_trajectory_logger/Logs/robot_state_log_2025_02_28_1402.json'
         spike_detector = SpikeDetector(file_path, fs=sampling_frequency, time_window=cutoff_time, passband=passband) # read out metrics
         # spike_detector.plot_metrics()
         # spike_detector.causal_lowpass_filter(spike_detector.drilling_force, cutoff=3.0, order=4)

@@ -6,7 +6,7 @@ from sklearn.linear_model import Ridge
 from scipy.signal import butter, filtfilt
 from scipy.ndimage import gaussian_filter
 import os
-from filters import ema_filter
+from robot_trajectory_logger.filters import ema_filter
 
 def extract_data(filename, sampling_rate = 500, time_window = 8):
     """

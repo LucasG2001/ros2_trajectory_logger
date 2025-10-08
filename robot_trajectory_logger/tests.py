@@ -1,4 +1,4 @@
-from RTFilters import RealTimeBandpassFilter
+from robot_trajectory_logger.RTFilters import RealTimeBandpassFilter
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal
