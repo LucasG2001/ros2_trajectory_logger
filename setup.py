@@ -28,6 +28,7 @@ setup(
              'breakthrough_detection = robot_trajectory_logger.detection_node:main', 
              'live_plotting = robot_trajectory_logger.live_plotting:main',  
              'send_csv_positions = robot_trajectory_logger.send_uprofiles:main',
+             'Lprofiles = robot_trajectory_logger.send_Lprofiles:main',
         ],
     },
 )

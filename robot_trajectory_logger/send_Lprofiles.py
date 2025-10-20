@@ -15,51 +15,49 @@ import os
 import matplotlib.pyplot as plt
 import csv
 import numpy as np
+from send_uprofiles import rotate_pose_y, hover_pose, make_neutral_pose
 
-fixed_offset = [0.41, 0.0, -0.025]  # Fixed offset (fixation center) in meters
+fixed_offset = [0.41, 0.0, 0.3]  # Fixed offset (fixation center) in meters
 #!/usr/bin/env python3
 
+def ee_pose_from_part_pose(part_pos, part_quat, l, d):
+    """
+    Compute gripper pose in world frame given:
+    - part_pos: (3,) part position in world
+    - part_quat: (4,) part quaternion in world [x,y,z,w]
+    - l: translation along part y-axis in local grasp
+    - d: translation along part z-axis in local grasp
+    Returns:
+    - gripper_pos: (3,) in world
+    - gripper_quat: (4,) [x,y,z,w] in world
+    """
+    # --- 1) l_P (grasp in local frame)
+    l_P = np.eye(4)
+    l_P[:3,3] = [0, l, d]  # translation, orientation = identity
 
-# Helper to create a neutral pose
-def make_neutral_pose():
-        neutral = Pose()
-        neutral.position.x = 0.45
-        neutral.position.y = 0.0
-        neutral.position.z = 0.45
-        neutral.orientation.x = 1.0
-        neutral.orientation.y = 0.0
-        neutral.orientation.z = 0.0
-        neutral.orientation.w = 0.0
-        return neutral
+    # --- 2) g_T_gl (local -> gripper, expressed in gripper frame)
+    R_gl = R.from_euler('x', 90, degrees=True).as_matrix()
+    g_T_gl = np.eye(4)
+    g_T_gl[:3,:3] = R_gl
+    # translation = [0,0,0], so already 0
 
-def rotate_pose_y(pose: Pose, angle_deg: float) -> Pose:
-    """Return a copy of the pose rotated by angle_deg around Y (pitch) using quaternion multiplication."""
-    # Create a quaternion for the Y rotation
-    rot_delta = R.from_euler('x', angle_deg, degrees=True)
+    # --- 3) w_T_wg (gripper in world)
+    R_P = R.from_quat(part_quat).as_matrix()
+    R_x180 = R.from_euler('x', 180, degrees=True).as_matrix()
+    R_wg = R_x180 @ R_P
+    w_T_wg = np.eye(4)
+    w_T_wg[:3,:3] = R_wg
+    w_T_wg[:3,3] = part_pos
 
-    # Original pose quaternion
-    quat_orig = [
-        pose.orientation.x,
-        pose.orientation.y,
-        pose.orientation.z,
-        pose.orientation.w
-    ]
+    # --- 4) total transform
+    T_total = w_T_wg @ g_T_gl @ l_P
 
-    # Quaternion multiplication: q_new = q_delta * q_orig
-    rot_orig = R.from_quat(quat_orig)
-    rot_new = rot_orig * rot_delta
-    quat_new = rot_new.as_quat()
+    # extract position and quaternion
+    gripper_pos = T_total[:3,3]
+    gripper_quat = R.from_matrix(T_total[:3,:3]).as_quat()  # [x,y,z,w]
 
-    # Create new pose
-    p = Pose()
-    p.position.x = pose.position.x
-    p.position.y = pose.position.y
-    p.position.z = pose.position.z
-    p.orientation.x = quat_new[0]
-    p.orientation.y = quat_new[1]
-    p.orientation.z = quat_new[2]
-    p.orientation.w = quat_new[3]
-    return p
+    return gripper_pos, gripper_quat
+
 
 def df_to_poses(df, rotx = True, rotz = False):
     poses = []
@@ -77,9 +75,9 @@ def df_to_poses(df, rotx = True, rotz = False):
 
         # Original quaternion from CSV
         quat_orig = [
-            -float(row["qx"]),
-            -float(row["qy"]),
-            -float(row["qz"]),
+            float(row["qx"]),
+            float(row["qy"]),
+            float(row["qz"]),
             float(row["qw"])
         ]
 
@@ -94,18 +92,6 @@ def df_to_poses(df, rotx = True, rotz = False):
         p.orientation.w = quat_new[3]
         poses.append(p)
     return poses
-
-def hover_pose(pose: Pose, z_offset: float = 0.06) -> Pose:
-        """
-        Return a copy of the given pose, offset in Z by z_offset.
-        """
-        pre = Pose()
-        pre.position.x = pose.position.x
-        pre.position.y = pose.position.y
-        pre.position.z = pose.position.z + z_offset
-        pre.orientation = pose.orientation
-        return pre
-
 
 class SimpleTeleopNode(Node):
 
@@ -152,18 +138,16 @@ class SimpleTeleopNode(Node):
             return
         df_all = pd.read_csv(csv_path)
 
-        df_pins = df_all[df_all['identifier'] == 'pins'].reset_index(drop=True)
-        df_jigs = df_all[df_all['identifier'] == 'jigs'].reset_index(drop=True)
-        df_uprofiles = df_all[df_all['identifier'] == 'UPROFILE'].reset_index(drop=True)
-        print(f"Loaded {len(df_pins)} pin poses, {len(df_jigs)} jig poses, {len(df_uprofiles)} u-profile poses.")
+        df_Lprofiles = df_all[df_all['identifier'] == 'LPROFILE'].reset_index(drop=True)
+        print(f"Loaded, {len(df_Lprofiles)} jig poses.")
 
         self.sequence = []
 
 
         # --- D2: pick first D2 (between B-points), place at last D (U-profiles)---
-        if len(df_uprofiles) >= 2:
-            d2_pick = df_to_poses(df_uprofiles.iloc[0:2], rotx=True, rotz=True)
-            d2_place = df_to_poses(df_uprofiles.iloc[-2:], rotx=True, rotz=True)
+        if len(df_Lprofiles) >= 2:
+            d2_pick = df_to_poses(df_Lprofiles.iloc[0:2], rotx=True, rotz=True)
+            d2_place = df_to_poses(df_Lprofiles.iloc[-2:], rotx=True, rotz=True)
             print("appending u profiles")
             for pick_pose, place_pose in zip(d2_pick, d2_place):
                 self.sequence.append((pick_pose, True))
@@ -183,18 +167,6 @@ class SimpleTeleopNode(Node):
         while time.time() - start_time < duration:
             rclpy.spin_once(self, timeout_sec=0.05)  # adjust timeout as needed
 
-     # Helper to create a neutral pose
-    def make_neutral_pose(self):
-        neutral = Pose()
-        neutral.position.x = 0.45
-        neutral.position.y = 0.0
-        neutral.position.z = 0.45
-        neutral.orientation.x = 1.0
-        neutral.orientation.y = 0.0
-        neutral.orientation.z = 0.0
-        neutral.orientation.w = 0.0
-        return neutral
-
 
     def robot_state_callback(self, msg: FrankaRobotState):
         # print("Received robot state message.")
@@ -205,17 +177,17 @@ class SimpleTeleopNode(Node):
         now = time.time()
         self.force_log.append((now, self.f_ext.force.x, self.f_ext.force.y, self.f_ext.force.z))
 
-    def send_grasp(self):
+    def send_grasp(self, width=0.0, speed = 0.2, epsilon = 0.04):
         if not self.grasp_client.wait_for_server(timeout_sec=5.0):
             self.get_logger().error("Grasp action server not available!")
             return
 
         goal_msg = Grasp.Goal()
-        goal_msg.width = 0.0        # fully close
-        goal_msg.speed = 0.1
+        goal_msg.width = width   # fully close
+        goal_msg.speed = speed
         goal_msg.force = 200.0
-        goal_msg.epsilon.inner = 0.04
-        goal_msg.epsilon.outer = 0.04
+        goal_msg.epsilon.inner = epsilon
+        goal_msg.epsilon.outer = epsilon
 
         self.get_logger().info("Sending grasp action goal...")
         send_goal_future = self.grasp_client.send_goal_async(goal_msg)
@@ -300,41 +272,20 @@ class SimpleTeleopNode(Node):
         # PLACE
         # -------------------
         pre_place = hover_pose(place_pose)
-        pre_place.position.x -= 0.02 
-
-        # Rotate hover pose and place pose by -15 deg in Y
-        pre_place_rot = rotate_pose_y(pre_place, 15)
-        place_pose_rot = rotate_pose_y(place_pose, 15)
 
         # move to rotated pre-place
-        self.cartesian_pub.publish(pre_place_rot)
+        self.cartesian_pub.publish(pre_place)
         self.wait(3.5)
         error = [self.ee_pose.position.x - place_pose.position.x,
                 self.ee_pose.position.y - place_pose.position.y]
         pose_errors.append({'step': 'pre-place-rot', 'x_error': error[0], 'y_error': error[1]})
         self.get_logger().info(f"pose error {error}")
 
-        # move to rotated place pose (descend with tilt)
-        # place_pose_rot.position.x -= 0.002
-        # self.cartesian_pub.publish(place_pose_rot)
-        # self.wait(2.0)
-        # place_pose_rot.position.x += 0.002
-        place_pose.position.z += 0.0075
-        self.cartesian_pub.publish(place_pose)
-        self.wait(2.0)
-        place_pose.position.z -= 0.0075
-        error = [self.ee_pose.position.x - place_pose.position.x,
-                self.ee_pose.position.y - place_pose.position.y]
-        pose_errors.append({'step': 'place-rot', 'x_error': error[0], 'y_error': error[1]})
-        self.get_logger().info(f"pose error {error}")
-
         # move to final place pose (upright)
         self.cartesian_pub.publish(place_pose)
         self.event_log.append((time.time(), 'insertion'))
         self.get_logger().info(f"Published place pose")
-        self.wait(2.5)
-        # self.float_mode_pub.publish(Int16(data=1))  # switch to insertion mode
-        self.wait(2.0)
+        self.wait(3.0)
         error = [self.ee_pose.position.x - place_pose.position.x,
                 self.ee_pose.position.y - place_pose.position.y]
         pose_errors.append({'step': 'place', 'x_error': error[0], 'y_error': error[1]})
@@ -349,11 +300,10 @@ class SimpleTeleopNode(Node):
         pre_place.position.z += 0.06
         self.cartesian_pub.publish(pre_place)
         self.wait(3.0)
-
         # -------------------
         # Return to neutral
         # -------------------
-        self.cartesian_pub.publish(self.make_neutral_pose())
+        self.cartesian_pub.publish(make_neutral_pose())
         self.get_logger().info("Returned to neutral pose.")
 
         return pose_errors
@@ -367,7 +317,7 @@ class SimpleTeleopNode(Node):
 
         # Return to neutral at start
         self.send_move(0.025)  # ensure gripper is open
-        self.cartesian_pub.publish(self.make_neutral_pose())
+        self.cartesian_pub.publish(make_neutral_pose())
         self.get_logger().info("Returned to neutral pose.")
         self.wait(3.0)
 
@@ -387,7 +337,7 @@ class SimpleTeleopNode(Node):
                 self.get_logger().warn(f"Unexpected sequence at step {i}: pick={do_grasp_pick}, place={do_grasp_place}")
 
         # Return to neutral at the end
-        self.cartesian_pub.publish(self.make_neutral_pose())
+        self.cartesian_pub.publish(make_neutral_pose())
         self.get_logger().info("Returned to neutral pose.")
 
         # Save errors to CSV
