@@ -32,34 +32,65 @@ def make_neutral_pose():
         neutral.orientation.w = 0.0
         return neutral
 
-def rotate_pose_y(pose: Pose, angle_deg: float) -> Pose:
-    """Return a copy of the pose rotated by angle_deg around Y (pitch) using quaternion multiplication."""
-    # Create a quaternion for the Y rotation
-    rot_delta = R.from_euler('x', angle_deg, degrees=True)
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+from geometry_msgs.msg import Pose
 
-    # Original pose quaternion
-    quat_orig = [
+def rotate_pose_y(pose: Pose, angle_deg: float, distance: float = 0.0) -> Pose:
+    """
+    Rotate a world-frame pose around the gripper's *local Y-axis* by angle_deg,
+    and optionally translate along the gripper's local Y-axis by `distance`.
+    """
+
+    # --- 1) Get current orientation as matrix ---
+    part_quat = np.array([
         pose.orientation.x,
         pose.orientation.y,
         pose.orientation.z,
         pose.orientation.w
-    ]
+    ])
+    R_P = R.from_quat(part_quat).as_matrix()
 
-    # Quaternion multiplication: q_new = q_delta * q_orig
-    rot_orig = R.from_quat(quat_orig)
-    rot_new = rot_orig * rot_delta
-    quat_new = rot_new.as_quat()
+    # --- 2) Build w_T_wg (world <- gripper) ---
+    R_x180 = R.from_euler('x', 180, degrees=True).as_matrix()
+    R_wg = R_P @ R_x180
+    w_T_wg = np.eye(4)
+    w_T_wg[:3, :3] = R_wg
+    w_T_wg[:3, 3] = np.array([pose.position.x, pose.position.y, pose.position.z])
 
-    # Create new pose
+    # --- 3) Define rotation around gripper's local Y-axis ---
+    R_grot = R.from_euler('x', angle_deg, degrees=True).as_matrix()
+
+    # --- 4) Convert local rotation to world coordinates ---
+    R_wrot = R_wg @ R_grot @ R_wg.T
+    q_wrot = R.from_matrix(R_wrot)
+
+    # --- 5) Original orientation ---
+    R_orig = R.from_quat(part_quat)
+
+    # --- 6) Apply world-frame equivalent rotation ---
+    R_new = q_wrot * R_orig
+    quat_new = R_new.as_quat()
+
+    # --- 7) Apply translation along local Y (if distance != 0) ---
+    p_local = np.array([0.0, distance, 0.0])  # translation along local Y
+    p_world = R_wg @ p_local                  # convert to world coordinates
+
+    new_pos = np.array([pose.position.x, pose.position.y, pose.position.z]) + p_world
+
+    # --- 8) Build new Pose ---
     p = Pose()
-    p.position.x = pose.position.x
-    p.position.y = pose.position.y
-    p.position.z = pose.position.z
+    p.position.x = new_pos[0]
+    p.position.y = new_pos[1]
+    p.position.z = new_pos[2]
     p.orientation.x = quat_new[0]
     p.orientation.y = quat_new[1]
     p.orientation.z = quat_new[2]
     p.orientation.w = quat_new[3]
+
     return p
+
+
 
 def df_to_poses(df, rotx = True, rotz = False):
     poses = []
@@ -146,7 +177,7 @@ class SimpleTeleopNode(Node):
         self.f_ext = Wrench()
 
         # Load and split CSV by identifier
-        csv_path = os.path.join(os.getcwd(), "robot_trajectory_logger/assembly_poses.csv")
+        csv_path = os.path.join(os.getcwd(), "assembly_poses.csv")
         if not os.path.exists(csv_path):
             self.get_logger().error(f"CSV file not found at {csv_path}")
             return
@@ -300,11 +331,10 @@ class SimpleTeleopNode(Node):
         # PLACE
         # -------------------
         pre_place = hover_pose(place_pose)
-        pre_place.position.x -= 0.02 
 
         # Rotate hover pose and place pose by -15 deg in Y
-        pre_place_rot = rotate_pose_y(pre_place, 15)
-        place_pose_rot = rotate_pose_y(place_pose, 15)
+        pre_place_rot = rotate_pose_y(pre_place, 25)
+        place_pose_rot = rotate_pose_y(place_pose, 25, distance=-0.003)
 
         # move to rotated pre-place
         self.cartesian_pub.publish(pre_place_rot)
@@ -315,21 +345,17 @@ class SimpleTeleopNode(Node):
         self.get_logger().info(f"pose error {error}")
 
         # move to rotated place pose (descend with tilt)
-        # place_pose_rot.position.x -= 0.002
-        # self.cartesian_pub.publish(place_pose_rot)
-        # self.wait(2.0)
-        # place_pose_rot.position.x += 0.002
-        place_pose.position.z += 0.0075
-        self.cartesian_pub.publish(place_pose)
+        self.cartesian_pub.publish(place_pose_rot)
         self.wait(2.0)
-        place_pose.position.z -= 0.0075
+        self.cartesian_pub.publish(rotate_pose_y(place_pose, 25, distance=0.003)) # drive into the pins
+        self.wait(2.0)
         error = [self.ee_pose.position.x - place_pose.position.x,
                 self.ee_pose.position.y - place_pose.position.y]
         pose_errors.append({'step': 'place-rot', 'x_error': error[0], 'y_error': error[1]})
         self.get_logger().info(f"pose error {error}")
 
         # move to final place pose (upright)
-        self.cartesian_pub.publish(place_pose)
+        self.cartesian_pub.publish(rotate_pose_y(place_pose, 0, distance=0.003)) #still drive into the pins
         self.event_log.append((time.time(), 'insertion'))
         self.get_logger().info(f"Published place pose")
         self.wait(2.5)

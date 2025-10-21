@@ -15,9 +15,11 @@ import os
 import matplotlib.pyplot as plt
 import csv
 import numpy as np
-from send_uprofiles import rotate_pose_y, hover_pose, make_neutral_pose
+from robot_trajectory_logger.wiggle_ee import wiggle_pose
+from robot_trajectory_logger.send_uprofiles import rotate_pose_y, hover_pose, make_neutral_pose
 
-fixed_offset = [0.41, 0.0, 0.3]  # Fixed offset (fixation center) in meters
+
+fixed_offset = [0.41, 0.0, 0.025]  # Fixed offset (fixation center) in meters
 #!/usr/bin/env python3
 
 def ee_pose_from_part_pose(part_pos, part_quat, l, d):
@@ -36,15 +38,15 @@ def ee_pose_from_part_pose(part_pos, part_quat, l, d):
     l_P[:3,3] = [0, l, d]  # translation, orientation = identity
 
     # --- 2) g_T_gl (local -> gripper, expressed in gripper frame)
-    R_gl = R.from_euler('x', 90, degrees=True).as_matrix()
+    R_gl = R.from_euler('x', -90, degrees=True)* R.from_euler('z', 180, degrees=True)
     g_T_gl = np.eye(4)
-    g_T_gl[:3,:3] = R_gl
+    g_T_gl[:3,:3] = R_gl.as_matrix()
     # translation = [0,0,0], so already 0
 
     # --- 3) w_T_wg (gripper in world)
     R_P = R.from_quat(part_quat).as_matrix()
     R_x180 = R.from_euler('x', 180, degrees=True).as_matrix()
-    R_wg = R_x180 @ R_P
+    R_wg = R_P @ R_x180
     w_T_wg = np.eye(4)
     w_T_wg[:3,:3] = R_wg
     w_T_wg[:3,3] = part_pos
@@ -61,35 +63,21 @@ def ee_pose_from_part_pose(part_pos, part_quat, l, d):
 
 def df_to_poses(df, rotx = True, rotz = False):
     poses = []
-    # Quaternion for 90 deg rotation around Z axis
-    rot_z90 = R.from_euler('z', 90, degrees=True) if rotz else R.identity()
-    # Quaternion for 180 deg rotation around X axis
-    rot_x180 = R.from_euler('x', 180, degrees=True) if rotx else R.identity()
-    # Compose the two rotations: first z, then x
-    rot_total = rot_x180 * rot_z90
     for _, row in df.iterrows():
+
+        part_position = np.array([row["X (m)"], row["Y (m)"], row["Z (m)"]])
+        part_orientation = np.array([float(row["qx"]), float(row["qy"]), float(row["qz"]), float(row["qw"])])
+
+        desired_pos, desired_orientation_quat = ee_pose_from_part_pose(part_position, part_orientation, l=0.0, d=-0.009)
         p = Pose()
-        p.position.x = float(row["X (m)"]) + fixed_offset[0]
-        p.position.y = float(row["Y (m)"]) + fixed_offset[1]
-        p.position.z = float(row["Z (m)"]) + fixed_offset[2]
+        p.position.x = desired_pos[0]  + fixed_offset[0]
+        p.position.y = desired_pos[1]  + fixed_offset[1] 
+        p.position.z = desired_pos[2] + fixed_offset[2]
+        p.orientation.x = desired_orientation_quat[0]
+        p.orientation.y = desired_orientation_quat[1]
+        p.orientation.z = desired_orientation_quat[2]
+        p.orientation.w = desired_orientation_quat[3]
 
-        # Original quaternion from CSV
-        quat_orig = [
-            float(row["qx"]),
-            float(row["qy"]),
-            float(row["qz"]),
-            float(row["qw"])
-        ]
-
-        # Quaternion multiplication: q_new = q_total * q_orig
-        rot_orig = R.from_quat(quat_orig)
-        rot_new = rot_total * rot_orig
-        quat_new = rot_new.as_quat()  # [x, y, z, w]
-
-        p.orientation.x = quat_new[0]
-        p.orientation.y = quat_new[1]
-        p.orientation.z = quat_new[2]
-        p.orientation.w = quat_new[3]
         poses.append(p)
     return poses
 
@@ -319,7 +307,8 @@ class SimpleTeleopNode(Node):
         self.send_move(0.025)  # ensure gripper is open
         self.cartesian_pub.publish(make_neutral_pose())
         self.get_logger().info("Returned to neutral pose.")
-        self.wait(3.0)
+        self.wait(2.0)
+        wiggle_pose(base_pose=make_neutral_pose(), amplitude=0.025, duration=3.5, rate=200.0, publisher=self.cartesian_pub)
 
         # Iterate over sequence in pairs (pick, place)
         for i in range(0, len(self.sequence), 2):

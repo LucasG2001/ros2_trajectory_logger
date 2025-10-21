@@ -15,9 +15,80 @@ import os
 import matplotlib.pyplot as plt
 import csv
 import numpy as np
+from robot_trajectory_logger.wiggle_ee import wiggle_pose
 
-fixed_offset = [0.41, 0.0, 0.026]  # Fixed offset (fixation center) in meters
+fixed_offset = [0.41, 0.0, 0.029]  # Fixed offset (fixation center) in meters
 #!/usr/bin/env python3
+
+def ee_pose_from_part_pose(part_pos, part_quat, l, d):
+    """
+    Compute gripper pose in world frame given:
+    - part_pos: (3,) part position in world
+    - part_quat: (4,) part quaternion in world [x,y,z,w]
+    - l: translation along part y-axis in local grasp
+    - d: translation along part z-axis in local grasp
+    Returns:
+    - gripper_pos: (3,) in world
+    - gripper_quat: (4,) [x,y,z,w] in world
+    """
+    # --- 1) l_P (grasp in local frame, pick pins)
+    l_P = np.eye(4)
+    l_P[:3,3] = [0, 0, 0]  # translation, orientation = identity
+    # --- 2) g_T_gl (local -> gripper, expressed in gripper frame)
+    g_T_gl = np.eye(4)
+    # translation = [0,0,0], so already 0
+    # --- 3) w_T_wg (gripper in world)
+    R_P = R.from_quat(part_quat).as_matrix()
+    R_x180 = R.from_euler('x', 180, degrees=True).as_matrix()
+    R_wg = R_P @ R_x180
+    w_T_wg = np.eye(4)
+    w_T_wg[:3,:3] = R_wg
+    w_T_wg[:3,3] = part_pos
+
+    # --- 4) total transform
+    T_total = w_T_wg @ g_T_gl @ l_P
+
+    # extract position and quaternion
+    gripper_pos = T_total[:3,3]
+    gripper_quat = R.from_matrix(T_total[:3,:3]).as_quat()  # [x,y,z,w]
+
+    return gripper_pos, gripper_quat
+
+
+def df_to_poses(df, rotx = True, rotz = False):
+    poses = []
+    for _, row in df.iterrows():
+
+        part_position = np.array([row["X (m)"], row["Y (m)"], row["Z (m)"]])
+        part_orientation = np.array([float(row["qx"]), float(row["qy"]), float(row["qz"]), float(row["qw"])])
+
+        desired_pos, desired_orientation_quat = ee_pose_from_part_pose(part_position, part_orientation, l=0.0, d=0.0)
+        p = Pose()
+        p.position.x = desired_pos[0]  + fixed_offset[0]
+        p.position.y = desired_pos[1]  + fixed_offset[1] 
+        p.position.z = desired_pos[2] + fixed_offset[2]
+        p.orientation.x = desired_orientation_quat[0]
+        p.orientation.y = desired_orientation_quat[1]
+        p.orientation.z = desired_orientation_quat[2]
+        p.orientation.w = desired_orientation_quat[3]
+
+        if p.position.x > 0.299:
+            poses.append(p)
+    
+    print(f"length of poses is {len(poses)}")
+    return poses
+
+
+def hover_pose(pose: Pose, z_offset: float = 0.06) -> Pose:
+        """
+        Return a copy of the given pose, offset in Z by z_offset.
+        """
+        pre = Pose()
+        pre.position.x = pose.position.x
+        pre.position.y = pose.position.y
+        pre.position.z = pose.position.z + z_offset
+        pre.orientation = pose.orientation
+        return pre
 
 
 class SimpleTeleopNode(Node):
@@ -58,43 +129,26 @@ class SimpleTeleopNode(Node):
         self.ee_pose = Pose()
         self.f_ext = Wrench()
 
-        # Load poses from CSV
-        csv_path = os.path.join(os.getcwd(), "points.csv")
+        # Load and split CSV by identifier
+        csv_path = os.path.join(os.getcwd(), "assembly_poses.csv")
         if not os.path.exists(csv_path):
             self.get_logger().error(f"CSV file not found at {csv_path}")
             return
+        df_all = pd.read_csv(csv_path)
 
+        df_pins = df_all[df_all['identifier'] == 'PIN'].reset_index(drop=True)
+        print(f"Loaded {len(df_pins)} pin poses.")
 
-        df = pd.read_csv(csv_path)
-        print(df.head())
-        # Expect columns: Label,X (m),Y (m),Z (m)
-        self.poses = []
-        for _, row in df.iterrows():
-            p = Pose()
-            p.position.x = float(row["X (m)"]) + fixed_offset[0]
-            p.position.y = float(row["Y (m)"]) + fixed_offset[1]
-            p.position.z = float(row["Z (m)"]) + fixed_offset[2]
-            # fixed orientation (0,1,0,0)
-            p.orientation.w = float(row["qw"])
-            p.orientation.x = float(row["qx"])
-            p.orientation.y = float(row["qy"])
-            p.orientation.z = float(row["qz"])
-            self.poses.append(p)
-
-
-        if len(self.poses) < 16:
-            self.get_logger().error("CSV must have at least 16 poses (8 first + 8 last).")
-            print("length was ", len(self.poses))
-            print(self.poses)
-            return
-
-        # Prepare sequence: alternating between first 8 and last 8
-        first_eight = self.poses[:4] 
-        last_eight = self.poses[-4:][::-1]
         self.sequence = []
-        for i in range(4):
-            self.sequence.append((first_eight[i], True))   # grasp after these
-            self.sequence.append((last_eight[i], False))   # no grasp after these
+
+        # --- Pins: pick first 2 A-pins, place at last 2 pins ---
+        # Identify A-pins by label starting with 'A'
+        # df_a_pins = df_pins[df_pins['Label'].str.startswith('A')].reset_index(drop=True)
+        pins_pick = df_to_poses(df_pins.iloc[:36])
+        pins_place = df_to_poses(df_pins.iloc[-10:])
+        for pick, place in zip(pins_pick, pins_place):
+            self.sequence.append((pick, True))   # Pick A-pin
+            self.sequence.append((place, False)) # Place A-pin
 
         self.get_logger().info(f"Prepared {len(self.sequence)} poses for execution.")
 
@@ -139,8 +193,8 @@ class SimpleTeleopNode(Node):
         goal_msg.width = 0.0        # fully close
         goal_msg.speed = 0.1
         goal_msg.force = 200.0
-        goal_msg.epsilon.inner = 0.02
-        goal_msg.epsilon.outer = 0.02
+        goal_msg.epsilon.inner = 0.04
+        goal_msg.epsilon.outer = 0.04
 
         self.get_logger().info("Sending grasp action goal...")
         send_goal_future = self.grasp_client.send_goal_async(goal_msg)
@@ -160,10 +214,10 @@ class SimpleTeleopNode(Node):
         else:
             self.get_logger().warn("Grasp failed.")
 
-    def send_move(self, width):
+    def send_move(self, width=0.06):
         open_msg = Move.Goal()
-        open_msg.width = 0.06    
-        open_msg.speed = 0.1
+        open_msg.width = width   
+        open_msg.speed = 0.15
         self.get_logger().info("Sending open action goal...")
         send_goal_future = self.move_client.send_goal_async(open_msg)
         rclpy.spin_until_future_complete(self, send_goal_future)
@@ -179,6 +233,91 @@ class SimpleTeleopNode(Node):
         else:
             self.get_logger().warn("gripper close failed.")
 
+    
+
+    def pick_and_place(self, pick_pose: Pose, place_pose: Pose):
+        """
+        Executes a pick and place routine:
+        - Hover over pick_pose, descend, grasp, and lift.
+        - Hover over place_pose, descend, release, and lift.
+        """
+
+        pose_errors = []
+
+        # -------------------
+        # PICK
+        # -------------------
+        pre_pick = hover_pose(pick_pose)
+
+        # move to pre-pick
+        self.cartesian_pub.publish(pre_pick)
+        self.wait(3.5)
+        error = [self.ee_pose.position.x - pick_pose.position.x,
+                self.ee_pose.position.y - pick_pose.position.y]
+        pose_errors.append({'step': 'pre-pick', 'x_error': error[0], 'y_error': error[1]})
+        self.get_logger().info(f"pose error {error}")
+
+        # move down to pick
+        self.cartesian_pub.publish(pick_pose)
+        self.wait(3.5)
+        error = [self.ee_pose.position.x - pick_pose.position.x,
+                self.ee_pose.position.y - pick_pose.position.y]
+        pose_errors.append({'step': 'pick', 'x_error': error[0], 'y_error': error[1]})
+        self.get_logger().info(f"pose error {error}")
+
+        # grasp
+        self.send_grasp()
+        self.wait(1.0)
+
+        # lift back up
+        pre_pick.position.z += 0.06
+        self.cartesian_pub.publish(pre_pick)
+        self.wait(3.0)
+
+        # -------------------
+        # PLACE
+        # -------------------
+        pre_place = hover_pose(place_pose)
+
+        # move to pre-place
+        self.cartesian_pub.publish(pre_place)
+        self.wait(3.5)
+        error = [self.ee_pose.position.x - place_pose.position.x,
+                self.ee_pose.position.y - place_pose.position.y]
+        pose_errors.append({'step': 'pre-place', 'x_error': error[0], 'y_error': error[1]})
+        self.get_logger().info(f"pose error {error}")
+
+        # move down to place
+        self.cartesian_pub.publish(place_pose)
+        self.wait(2.5) # halfway through
+        self.get_logger().info(f"Published place pose")
+        wiggle_pose(base_pose=place_pose, amplitude=0.025, duration=3.0, rate=200, publisher=self.cartesian_pub)
+        self.float_mode_pub.publish(Int16(data=1)) # control mode = 1 (LOWER STIFFNESS)
+        self.wait(1.5)
+        self.event_log.append((time.time(), 'insertion'))
+        error = [self.ee_pose.position.x - place_pose.position.x,
+                self.ee_pose.position.y - place_pose.position.y]
+        pose_errors.append({'step': 'place', 'x_error': error[0], 'y_error': error[1]})
+        self.get_logger().info(f"pose error {error}")
+
+        # release
+        self.send_move(0.06)
+        self.wait(1.0)
+        self.float_mode_pub.publish(Int16(data=0)) # control mode = 0 (Hgh STIFFNESS)
+
+        # lift back up
+        pre_place.position.z += 0.06
+        self.cartesian_pub.publish(pre_place)
+        self.wait(3.0)
+
+        # -------------------
+        # Return to neutral
+        # -------------------
+        self.cartesian_pub.publish(self.make_neutral_pose())
+        self.get_logger().info("Returned to neutral pose.")
+
+        return pose_errors
+
     def run(self):
         if not hasattr(self, "sequence"):
             self.get_logger().error("No sequence prepared. Exiting run loop.")
@@ -192,68 +331,18 @@ class SimpleTeleopNode(Node):
         self.get_logger().info("Returned to neutral pose.")
         self.wait(3.0)
 
-        for i, (pose, do_grasp) in enumerate(self.sequence):
-            # Approach from above
-            pre_pose = Pose()
-            pre_pose.position.x = pose.position.x
-            pre_pose.position.y = pose.position.y
-            pre_pose.position.z = pose.position.z + 0.06
-            pre_pose.orientation = pose.orientation
-
-            # Grasp or release
-            if do_grasp:
-                # self.float_mode_pub.publish(Int16(data=0))  # switch to grasped mode
-                self.cartesian_pub.publish(pre_pose)
-                self.wait(3.5)
-                # LOG
-                error = [self.ee_pose.position.x - pose.position.x,
-                self.ee_pose.position.y - pose.position.y]
-                pose_errors.append({'step': i, 'x_error': error[0], 'y_error': error[1]})
-                self.get_logger().info(f"pose error {error}")
-                # End Log
-                self.cartesian_pub.publish(pose)  # go back down
-                self.get_logger().info(f"Published pose {i+1}/{len(self.sequence)}")
-                self.wait(3.5)
-                # LOG
-                error = [
-                self.ee_pose.position.x - pose.position.x,
-                self.ee_pose.position.y - pose.position.y]
-                pose_errors.append({'step': i, 'x_error': error[0], 'y_error': error[1]})
-                # end log
-                self.send_grasp()
-                self.wait(1.0)
-                pre_pose.position.z += 0.04  # small lift before going up
-                self.cartesian_pub.publish(pre_pose)  # lift back up
-                self.wait(3.0)
+        # Iterate over sequence in pairs (pick, place)
+        for i in range(0, len(self.sequence), 2):
+            if i + 1 >= len(self.sequence):
+                break
+            pick_pose, do_grasp_pick = self.sequence[i]
+            place_pose, do_grasp_place = self.sequence[i + 1]
+            # Only pick if do_grasp_pick is True and place if do_grasp_place is False
+            if do_grasp_pick and not do_grasp_place:
+                errors = self.pick_and_place(pick_pose, place_pose)
+                pose_errors.extend(errors)
             else:
-                self.cartesian_pub.publish(pre_pose)
-                self.wait(3.5)
-                # LOG
-                error = [self.ee_pose.position.x - pose.position.x,
-                self.ee_pose.position.y - pose.position.y]
-                pose_errors.append({'step': i, 'x_error': error[0], 'y_error': error[1]})
-                self.get_logger().info(f"pose error {error}")
-                # move down to pose
-                self.cartesian_pub.publish(pose)  # go back down
-                self.event_log.append((time.time(), 'insertion'))
-                self.get_logger().info(f"Published pose {i+1}/{len(self.sequence)}")
-                self.wait(0.5)
-                self.float_mode_pub.publish(Int16(data=1))  # switch to insertion mode
-                self.wait(3.0)
-                # LOG
-                error = [
-                self.ee_pose.position.x - pose.position.x,
-                self.ee_pose.position.y - pose.position.y]
-                pose_errors.append({'step': i, 'x_error': error[0], 'y_error': error[1]})
-                # end log
-                # open gripper
-                self.send_move(0.06)
-                self.wait(1.0)
-                self.float_mode_pub.publish(Int16(data=0))  # switch back to floating mode
-                self.cartesian_pub.publish(pre_pose)  # lift back up
-                self.wait(3.0)
-                
-            
+                self.get_logger().warn(f"Unexpected sequence at step {i}: pick={do_grasp_pick}, place={do_grasp_place}")
 
         # Return to neutral at the end
         self.cartesian_pub.publish(self.make_neutral_pose())

@@ -15,24 +15,98 @@ import os
 import matplotlib.pyplot as plt
 import csv
 import numpy as np
+from robot_trajectory_logger.wiggle_ee import wiggle_pose
 
-fixed_offset = [0.41, 0.0, 0.026]  # Fixed offset (fixation center) in meters
+fixed_offset = [0.41, 0.0, 0.029]  # Fixed offset (fixation center) in meters
 #!/usr/bin/env python3
 
+def rotate_pose_around_world_z(pose_in: Pose, angle_deg) -> Pose:
+    """
+    Rotate a Pose by -120 degrees around the world Z axis.
+    Uses scipy.spatial.transform.Rotation for efficiency.
+    """
+    # Convert input pose to numpy objects
+    p = np.array([pose_in.position.x, pose_in.position.y, pose_in.position.z])
+    q = np.array([
+        pose_in.orientation.x,
+        pose_in.orientation.y,
+        pose_in.orientation.z,
+        pose_in.orientation.w
+    ])
+    # Rotation: deg about Z axis
+    Rz = R.from_euler('z', angle_deg, degrees=True)
 
-def df_to_poses(df):
-        poses = []
-        for _, row in df.iterrows():
-            p = Pose()
-            p.position.x = float(row["X (m)"]) + fixed_offset[0]
-            p.position.y = float(row["Y (m)"]) + fixed_offset[1]
-            p.position.z = float(row["Z (m)"]) + fixed_offset[2]
-            p.orientation.w = float(row["qw"])
-            p.orientation.x = float(row["qx"])
-            p.orientation.y = float(row["qy"])
-            p.orientation.z = float(row["qz"])
+    # Rotate position and orientation in world frame
+    p_rot = Rz.apply(p)
+    q_rot = (Rz * R.from_quat(q)).as_quat()
+
+    # Build output pose
+    pose_out = Pose()
+    pose_out.position.x, pose_out.position.y, pose_out.position.z = p_rot
+    pose_out.orientation.x, pose_out.orientation.y, pose_out.orientation.z, pose_out.orientation.w = q_rot
+
+    return pose_out
+
+
+def ee_pose_from_part_pose(part_pos, part_quat, l, d):
+    """
+    Compute gripper pose in world frame given:
+    - part_pos: (3,) part position in world
+    - part_quat: (4,) part quaternion in world [x,y,z,w]
+    - l: translation along part y-axis in local grasp
+    - d: translation along part z-axis in local grasp
+    Returns:
+    - gripper_pos: (3,) in world
+    - gripper_quat: (4,) [x,y,z,w] in world
+    """
+    # --- 1) l_P (grasp in local frame, pick pins)
+    l_P = np.eye(4)
+    l_P[:3,3] = [0, 0, 0]  # translation, orientation = identity
+    # --- 2) g_T_gl (local -> gripper, expressed in gripper frame)
+    g_T_gl = np.eye(4)
+    # translation = [0,0,0], so already 0
+    # --- 3) w_T_wg (gripper in world)
+    R_P = R.from_quat(part_quat).as_matrix()
+    R_x180 = R.from_euler('x', 180, degrees=True).as_matrix()
+    R_wg = R_P @ R_x180
+    w_T_wg = np.eye(4)
+    w_T_wg[:3,:3] = R_wg
+    w_T_wg[:3,3] = part_pos
+
+    # --- 4) total transform
+    T_total = w_T_wg @ g_T_gl @ l_P
+
+    # extract position and quaternion
+    gripper_pos = T_total[:3,3]
+    gripper_quat = R.from_matrix(T_total[:3,:3]).as_quat()  # [x,y,z,w]
+
+    return gripper_pos, gripper_quat
+
+
+def df_to_poses(df, rotx = True, rotz = False):
+    poses = []
+    for _, row in df.iterrows():
+
+        part_position = np.array([row["X (m)"], row["Y (m)"], row["Z (m)"]])
+        part_orientation = np.array([float(row["qx"]), float(row["qy"]), float(row["qz"]), float(row["qw"])])
+
+        desired_pos, desired_orientation_quat = ee_pose_from_part_pose(part_position, part_orientation, l=0.0, d=0.0)
+        p = Pose()
+        p.position.x = desired_pos[0]  + fixed_offset[0]
+        p.position.y = desired_pos[1]  + fixed_offset[1] 
+        p.position.z = desired_pos[2] + fixed_offset[2]
+        # the nut is rotation symmetric
+        p.orientation.x = 1.0
+        p.orientation.y = 0.0
+        p.orientation.z = 0.0
+        p.orientation.w = 0.0
+
+        if p.position.x > 0.299:
             poses.append(p)
-        return poses
+    
+    print(f"length of poses is {len(poses)}")
+    return poses
+
 
 def hover_pose(pose: Pose, z_offset: float = 0.06) -> Pose:
         """
@@ -85,43 +159,25 @@ class SimpleTeleopNode(Node):
         self.f_ext = Wrench()
 
         # Load and split CSV by identifier
-        csv_path = os.path.join(os.getcwd(), "profile_points.csv")
+        csv_path = os.path.join(os.getcwd(), "assembly_poses.csv")
         if not os.path.exists(csv_path):
             self.get_logger().error(f"CSV file not found at {csv_path}")
             return
         df_all = pd.read_csv(csv_path)
 
-        df_pins = df_all[df_all['identifier'] == 'pins'].reset_index(drop=True)
-        df_jigs = df_all[df_all['identifier'] == 'jigs'].reset_index(drop=True)
-        df_uprofiles = df_all[df_all['identifier'] == 'u_profiles'].reset_index(drop=True)
-        print(f"Loaded {len(df_pins)} pin poses, {len(df_jigs)} jig poses, {len(df_uprofiles)} u-profile poses.")
+        df_pins = df_all[df_all['identifier'] == 'PIN'].reset_index(drop=True)
+        print(f"Loaded {len(df_pins)} pin poses.")
 
         self.sequence = []
 
         # --- Pins: pick first 2 A-pins, place at last 2 pins ---
         # Identify A-pins by label starting with 'A'
-        df_a_pins = df_pins[df_pins['Label'].str.startswith('A')].reset_index(drop=True)
-        pins_pick = df_to_poses(df_a_pins.iloc[:2])
-        pins_place = df_to_poses(df_a_pins.iloc[-2:])
+        # df_a_pins = df_pins[df_pins['Label'].str.startswith('A')].reset_index(drop=True)
+        pins_pick = df_to_poses(df_pins.iloc[:36])
+        pins_place = df_to_poses(df_pins.iloc[-10:])
         for pick, place in zip(pins_pick, pins_place):
             self.sequence.append((pick, True))   # Pick A-pin
             self.sequence.append((place, False)) # Place A-pin
-
-        # --- D2: pick first D2 (between B-points), place at last D (U-profiles)---
-        if len(df_uprofiles) >= 2:
-            d2_pick = df_to_poses(df_uprofiles.iloc[1:2])
-            d2_place = df_to_poses(df_uprofiles.iloc[-1:])
-            print("appending u profiles")
-            self.sequence.append((d2_pick[0], True))
-            self.sequence.append((d2_place[0], False))
-
-        # --- Jigs: pick first, place at last ---
-        if len(df_jigs) >= 2:
-            print("appending jigs")
-            jig_pick = df_to_poses(df_jigs.iloc[:1])
-            jig_place = df_to_poses(df_jigs.iloc[-1:])
-            self.sequence.append((jig_pick[0], True))
-            self.sequence.append((jig_place[0], False))
 
         self.get_logger().info(f"Prepared {len(self.sequence)} poses for execution.")
 
@@ -220,59 +276,35 @@ class SimpleTeleopNode(Node):
         # -------------------
         # PICK
         # -------------------
-        pre_pick = hover_pose(pick_pose)
-
-        # move to pre-pick
-        self.cartesian_pub.publish(pre_pick)
-        self.wait(3.5)
-        error = [self.ee_pose.position.x - pick_pose.position.x,
-                self.ee_pose.position.y - pick_pose.position.y]
-        pose_errors.append({'step': 'pre-pick', 'x_error': error[0], 'y_error': error[1]})
-        self.get_logger().info(f"pose error {error}")
-
-        # move down to pick
-        self.cartesian_pub.publish(pick_pose)
-        self.wait(3.5)
-        error = [self.ee_pose.position.x - pick_pose.position.x,
-                self.ee_pose.position.y - pick_pose.position.y]
-        pose_errors.append({'step': 'pick', 'x_error': error[0], 'y_error': error[1]})
-        self.get_logger().info(f"pose error {error}")
-
+        # move to neutral to feed nut
+        self.cartesian_pub.publish(self.make_neutral_pose())
+        self.wait(3.0)
+        print("arrived at neutral pose, pickcing nut")
+        self.wait(0.5)
         # grasp
         self.send_grasp()
         self.wait(1.0)
-
-        # lift back up
-        pre_pick.position.z += 0.06
-        self.cartesian_pub.publish(pre_pick)
-        self.wait(3.0)
 
         # -------------------
         # PLACE
         # -------------------
         pre_place = hover_pose(place_pose)
-
         # move to pre-place
         self.cartesian_pub.publish(pre_place)
-        self.wait(3.5)
-        error = [self.ee_pose.position.x - place_pose.position.x,
-                self.ee_pose.position.y - place_pose.position.y]
-        pose_errors.append({'step': 'pre-place', 'x_error': error[0], 'y_error': error[1]})
-        self.get_logger().info(f"pose error {error}")
-
+        self.wait(2.0)
         # move down to place
         self.cartesian_pub.publish(place_pose)
-        self.event_log.append((time.time(), 'insertion'))
         self.get_logger().info(f"Published place pose")
-        self.wait(3.0)
-        error = [self.ee_pose.position.x - place_pose.position.x,
-                self.ee_pose.position.y - place_pose.position.y]
-        pose_errors.append({'step': 'place', 'x_error': error[0], 'y_error': error[1]})
-        self.get_logger().info(f"pose error {error}")
-
+        self.wait(0.5) # halfway through
+        self.float_mode_pub.publish(Int16(data=1.0)) # low stiffness
+        self.cartesian_pub.publish(place_pose)
+        self.wait(1.5)
+        self.cartesian_pub.publish(rotate_pose_around_world_z(place_pose, angle_deg=-120))
+        self.wait(2.0)
         # release
         self.send_move(0.06)
         self.wait(1.0)
+        self.float_mode_pub.publish(Int16(data=0)) # control mode = 0 (Hgh STIFFNESS)
 
         # lift back up
         pre_place.position.z += 0.06
