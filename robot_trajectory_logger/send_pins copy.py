@@ -15,10 +15,11 @@ import os
 import matplotlib.pyplot as plt
 import csv
 import numpy as np
-from robot_trajectory_logger.wiggle_ee import wiggle_pose
+from robot_trajectory_logger.wiggle_ee import wiggle_pose, wiggle_out
 
-fixed_offset = [0.41, 0.0, 0.029]  # Fixed offset (fixation center) in meters
+fixed_offset = [0.4, 0.0, 0.029]  # Fixed offset (fixation center) in meters
 #!/usr/bin/env python3
+
 
 def ee_pose_from_part_pose(part_pos, part_quat, l, d):
     """
@@ -27,30 +28,40 @@ def ee_pose_from_part_pose(part_pos, part_quat, l, d):
     - part_quat: (4,) part quaternion in world [x,y,z,w]
     - l: translation along part y-axis in local grasp
     - d: translation along part z-axis in local grasp
-    Returns:
-    - gripper_pos: (3,) in world
-    - gripper_quat: (4,) [x,y,z,w] in world
+
+    The resulting orientation is wrapped modulo 90° around world Z.
     """
-    # --- 1) l_P (grasp in local frame, pick pins)
+
+    # --- 1) l_P (local grasp)
     l_P = np.eye(4)
-    l_P[:3,3] = [0, 0, 0]  # translation, orientation = identity
-    # --- 2) g_T_gl (local -> gripper, expressed in gripper frame)
+    l_P[:3, 3] = [0, 0, 0]
+
+    # --- 2) g_T_gl (local -> gripper)
     g_T_gl = np.eye(4)
-    # translation = [0,0,0], so already 0
-    # --- 3) w_T_wg (gripper in world)
+
+    # --- 3) Base rotation: part orientation * flip X180
     R_P = R.from_quat(part_quat).as_matrix()
     R_x180 = R.from_euler('x', 180, degrees=True).as_matrix()
     R_wg = R_P @ R_x180
-    w_T_wg = np.eye(4)
-    w_T_wg[:3,:3] = R_wg
-    w_T_wg[:3,3] = part_pos
 
-    # --- 4) total transform
+    # --- 4) Extract yaw and apply modulo 90
+    euler = R.from_matrix(R_wg).as_euler('xyz', degrees=True)
+    roll, pitch, yaw = euler
+    yaw_mod = np.mod(yaw, 90.0)  # e.g. 110° → 20°, 185° → 5°
+
+    # rebuild rotation with wrapped yaw
+    R_wg = R.from_euler('xyz', [roll, pitch, yaw_mod], degrees=True).as_matrix()
+
+    # --- 5) Build homogeneous transform
+    w_T_wg = np.eye(4)
+    w_T_wg[:3, :3] = R_wg
+    w_T_wg[:3, 3] = part_pos
+
+    # --- 6) Combine with local offsets (optional)
     T_total = w_T_wg @ g_T_gl @ l_P
 
-    # extract position and quaternion
-    gripper_pos = T_total[:3,3]
-    gripper_quat = R.from_matrix(T_total[:3,:3]).as_quat()  # [x,y,z,w]
+    gripper_pos = T_total[:3, 3]
+    gripper_quat = R.from_matrix(T_total[:3, :3]).as_quat()
 
     return gripper_pos, gripper_quat
 
@@ -64,15 +75,15 @@ def df_to_poses(df, rotx = True, rotz = False):
 
         desired_pos, desired_orientation_quat = ee_pose_from_part_pose(part_position, part_orientation, l=0.0, d=0.0)
         p = Pose()
-        p.position.x = desired_pos[0]  + fixed_offset[0]
-        p.position.y = desired_pos[1]  + fixed_offset[1] 
-        p.position.z = desired_pos[2] + fixed_offset[2]
+        p.position.x = desired_pos[0] 
+        p.position.y = desired_pos[1]  
+        p.position.z = desired_pos[2]
         p.orientation.x = desired_orientation_quat[0]
         p.orientation.y = desired_orientation_quat[1]
         p.orientation.z = desired_orientation_quat[2]
         p.orientation.w = desired_orientation_quat[3]
 
-        if p.position.x > 0.299:
+        if p.position.x + fixed_offset[0] > 0.4:
             poses.append(p)
     
     print(f"length of poses is {len(poses)}")
@@ -114,13 +125,19 @@ class SimpleTeleopNode(Node):
         # Gripper action clients
         self.move_client = ActionClient(self, Move, '/fr3_gripper/move')
         self.grasp_client = ActionClient(self, Grasp, '/fr3_gripper/grasp')
-
+        self.fixed_offset = np.array([0.4, 0.0, 0.029])
 
         # Subscribers
         self.pose_subscriber = self.create_subscription(
             FrankaRobotState,
             '/franka_robot_state_broadcaster/robot_state',
             self.robot_state_callback,
+            1)
+        
+        self.wheel_subscriber = self.create_subscription(
+            Pose,
+            '/wheel_center',
+            self.wheel_callback,
             1)
 
         self.get_logger().info("Simple teleop node started.")
@@ -141,14 +158,17 @@ class SimpleTeleopNode(Node):
 
         self.sequence = []
 
-        # --- Pins: pick first 2 A-pins, place at last 2 pins ---
-        # Identify A-pins by label starting with 'A'
-        # df_a_pins = df_pins[df_pins['Label'].str.startswith('A')].reset_index(drop=True)
-        pins_pick = df_to_poses(df_pins.iloc[:36])
-        pins_place = df_to_poses(df_pins.iloc[-10:])
-        for pick, place in zip(pins_pick, pins_place):
-            self.sequence.append((pick, True))   # Pick A-pin
-            self.sequence.append((place, False)) # Place A-pin
+        # Convert df_pins to Pose objects
+        df_pins = df_to_poses(df_pins)
+        # Split df_pins into two non-overlapping halves
+        half = len(df_pins) // 2
+        pins_pick = df_pins[2:half]
+        pins_place = df_pins[half+2:]
+
+        # Build sequence: pick → place
+        for pick_pose, place_pose in zip(pins_pick, pins_place):
+            self.sequence.append((pick_pose, True))    # Pick
+            self.sequence.append((place_pose, False))  # Place
 
         self.get_logger().info(f"Prepared {len(self.sequence)} poses for execution.")
 
@@ -156,97 +176,17 @@ class SimpleTeleopNode(Node):
         self.force_log = [] # List of (timestamp, fx, fy, fz)
         self.event_log = [] # List of (timestamp, event_type)
 
+    def wheel_callback(self, msg: Pose):
+        self.fixed_offset[0] = msg.position.x
+        self.fixed_offset[1] = msg.position.y
+        self.fixed_offset[2] = msg.position.z
+
     def wait(self, duration):
+
         """Wait for `duration` seconds while keeping the node spinning."""
         start_time = time.time()
         while time.time() - start_time < duration:
-            rclpy.spin_once(self, timeout_sec=0.05)  # adjust timeout as needed
-
-    def spiral_pose(self,
-    base_pose,
-    final_z_offset: float = -0.007,  # 7 mm down
-    duration: float = 4.0,
-    rate: float = 200.0,
-    xy_amplitude: float = 0.03,      # max XY amplitude (m)
-    freq_xy: float = 0.5,            # spiral frequency (Hz)):
-    ):
-        """
-        Generate or publish a spiral motion around a base pose, gradually moving down.
-
-        Args:
-            base_pose: geometry_msgs.msg.Pose or np.ndarray [x,y,z,qx,qy,qz,qw]
-            final_z_offset: total Z displacement over duration (m, negative = downward)
-            duration: total motion time (s)
-            rate: sample rate (Hz)
-            xy_amplitude: maximum XY spiral radius
-            freq_xy: spiral angular frequency (Hz)
-            publisher: rclpy publisher for Pose messages, or None
-
-        Returns:
-            np.ndarray (N,7) if not publishing
-        """
-    # --- Base pose parsing
-        if isinstance(base_pose, Pose):
-            p0 = np.array([base_pose.position.x, base_pose.position.y, base_pose.position.z])
-            q0 = np.array([base_pose.orientation.x, base_pose.orientation.y,
-                        base_pose.orientation.z, base_pose.orientation.w])
-        else:
-            p0 = np.array(base_pose[:3])
-            q0 = np.array(base_pose[3:])
-        
-        start_depth = self.ee_pose.position.z
-
-        # --- Time vector
-        dt = 1.0 / rate
-        t = np.arange(0.0, duration, dt)
-        N = len(t)
-
-        # --- Linear Z descent
-        dz = np.linspace(0.0, final_z_offset, N) * 0
-
-        # --- Spiral radius grows linearly
-        r = xy_amplitude * (t / duration)  # radius increases from 0 to max
-
-        # --- Spiral angle
-        theta = 2 * np.pi * freq_xy * t  # angular position
-
-        # --- Preallocate poses
-        poses = np.zeros((N, 7))
-
-        for i in range(N):
-            print(f"depth is {np.abs(start_depth - self.ee_pose.position.z)}")
-            rclpy.spin_once(self, timeout_sec=0.001)
-            if np.abs(start_depth - self.ee_pose.position.z) > 0.007:
-                print("reached depth goal")
-                return
-            # XY spiral displacement
-            dx = r[i] * np.cos(theta[i])
-            dy = r[i] * np.sin(theta[i])
-            pos = p0 + np.array([dx, dy, dz[i]])
-
-            # Keep orientation same as base
-            quat = q0
-
-            poses[i, :] = np.hstack((pos, quat))
-
-            if self.cartesian_pub is not None:
-                msg = Pose()
-                msg.position.x, msg.position.y, msg.position.z = pos
-                msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w = quat
-                self.cartesian_pub.publish(msg)
-                time.sleep(dt)
-
-        # Return to base pose at the end
-        if self.cartesian_pub is not None:
-            if isinstance(base_pose, Pose):
-                self.cartesian_pub.publish(base_pose)
-            else:
-                msg = Pose()
-                msg.position.x, msg.position.y, msg.position.z = p0
-                msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w = q0
-                self.cartesian_pub.publish(msg)
-
-        return None if self.cartesian_pub else poses
+            rclpy.spin_once(self, timeout_sec=0.01)  # adjust timeout as needed
 
      # Helper to create a neutral pose
     def make_neutral_pose(self):
@@ -337,7 +277,7 @@ class SimpleTeleopNode(Node):
 
         # move to pre-pick
         self.cartesian_pub.publish(pre_pick)
-        self.wait(3.5)
+        self.wait(3.0)
         error = [self.ee_pose.position.x - pick_pose.position.x,
                 self.ee_pose.position.y - pick_pose.position.y]
         pose_errors.append({'step': 'pre-pick', 'x_error': error[0], 'y_error': error[1]})
@@ -350,16 +290,23 @@ class SimpleTeleopNode(Node):
                 self.ee_pose.position.y - pick_pose.position.y]
         pose_errors.append({'step': 'pick', 'x_error': error[0], 'y_error': error[1]})
         self.get_logger().info(f"pose error {error}")
-
+        
         # grasp
+        self.float_mode_pub.publish(Int16(data=2))
+        self.wait(0.1)
         self.send_grasp()
         self.wait(1.0)
-
+        self.cartesian_pub.publish(self.ee_pose) # stay
+        self.wait(0.5)
+        pre_pick = self.ee_pose
         # lift back up
-        pre_pick.position.z += 0.06
+        # wiggle_out(base_pose=self.ee_pose, z_dist=0.08, duration=3.0, rate=200, publisher=self.cartesian_pub)
+        pre_pick.position.z += 0.06 
+        self.float_mode_pub.publish(Int16(data=0))
         self.cartesian_pub.publish(pre_pick)
         self.wait(3.0)
-
+        
+        
         # -------------------
         # PLACE
         # -------------------
@@ -374,13 +321,14 @@ class SimpleTeleopNode(Node):
         self.get_logger().info(f"pose error {error}")
 
         # move down to place
-        self.cartesian_pub.publish(place_pose)
-        self.wait(2.5) # halfway through
-        self.get_logger().info(f"Published place pose")
-        # wiggle_pose(base_pose=place_pose, amplitude=0.025, duration=3.0, rate=200, publisher=self.cartesian_pub)
-        self.spiral_pose(base_pose=place_pose, final_z_offset=0.007, duration=4.0, rate=200.0, xy_amplitude=0.03, freq_xy=1.5)
         self.float_mode_pub.publish(Int16(data=1)) # control mode = 1 (LOWER STIFFNESS)
+        self.cartesian_pub.publish(place_pose)
+        self.wait(1.5) # halfway through
+        self.get_logger().info(f"Published place pose")
+        wiggle_pose(base_pose=place_pose, amplitude=0.025, duration=3.0, rate=200, publisher=self.cartesian_pub)
         self.wait(1.5)
+        self.float_mode_pub.publish(Int16(data=2)) # low stiffness in hole
+        self.cartesian_pub.publish(self.ee_pose) # stay
         self.event_log.append((time.time(), 'insertion'))
         error = [self.ee_pose.position.x - place_pose.position.x,
                 self.ee_pose.position.y - place_pose.position.y]
@@ -422,8 +370,14 @@ class SimpleTeleopNode(Node):
         for i in range(0, len(self.sequence), 2):
             if i + 1 >= len(self.sequence):
                 break
-            pick_pose, do_grasp_pick = self.sequence[i]
+            pick_pose, do_grasp_pick = self.sequence[i]  
+            pick_pose.position.x += self.fixed_offset[0] 
+            pick_pose.position.y += self.fixed_offset[1]
+            pick_pose.position.z += self.fixed_offset[2]    
             place_pose, do_grasp_place = self.sequence[i + 1]
+            place_pose.position.x += self.fixed_offset[0]            
+            place_pose.position.y += self.fixed_offset[1]
+            place_pose.position.z += self.fixed_offset[2] 
             # Only pick if do_grasp_pick is True and place if do_grasp_place is False
             if do_grasp_pick and not do_grasp_place:
                 errors = self.pick_and_place(pick_pose, place_pose)

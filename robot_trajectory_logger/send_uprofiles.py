@@ -314,7 +314,7 @@ class SimpleTeleopNode(Node):
                 self.ee_pose.position.y - pick_pose.position.y]
         pose_errors.append({'step': 'pick', 'x_error': error[0], 'y_error': error[1]})
         self.get_logger().info(f"pose error {error}")
-
+        self.float_mode_pub.publish(Int16(data=2))
         # grasp
         self.send_grasp()
         self.wait(1.0)
@@ -330,7 +330,7 @@ class SimpleTeleopNode(Node):
         pre_place = hover_pose(place_pose)
 
         # Rotate hover pose and place pose by -15 deg in Y
-        pre_place_rot = rotate_pose_y(pre_place, 20)
+        pre_place_rot = rotate_pose_y(pre_place, 15)
 
         # move to rotated pre-place
         self.cartesian_pub.publish(pre_place_rot)
@@ -341,9 +341,9 @@ class SimpleTeleopNode(Node):
         self.get_logger().info(f"pose error {error}")
 
         # move to rotated place pose (descend with tilt)
-        self.cartesian_pub.publish(rotate_pose_y(place_pose, 20, distance=-0.008))
+        self.cartesian_pub.publish(rotate_pose_y(place_pose, 15, distance=-0.006))
         self.wait(2.0)
-        self.cartesian_pub.publish(rotate_pose_y(place_pose, 20, distance=0.003)) # drive into the pins
+        self.cartesian_pub.publish(rotate_pose_y(place_pose, 15, distance=0.001)) # drive into the pins
         self.wait(2.0)
         error = [self.ee_pose.position.x - place_pose.position.x,
                 self.ee_pose.position.y - place_pose.position.y]
@@ -352,11 +352,14 @@ class SimpleTeleopNode(Node):
 
         # move to final place pose (upright)
         self.cartesian_pub.publish(rotate_pose_y(place_pose, 0, distance=0.000)) #still drive into the pins
-        self.event_log.append((time.time(), 'insertion'))
-        self.get_logger().info(f"Published place pose")
+        self.float_mode_pub.publish(Int16(data=2))
         self.wait(2.5)
+        self.float_mode_pub.publish(Int16(data=0))  # switch back to stiff mode
+        self.wait(0.5)
+        wiggle_pose(base_pose=place_pose, amplitude=0.02, duration=2.5, rate=200, publisher=self.cartesian_pub, angle_deg=25.0)
+        self.event_log.append((time.time(), 'insertion'))
+        self.get_logger().info(f"Published place pose") 
         # self.float_mode_pub.publish(Int16(data=1))  # switch to insertion mode
-        self.wait(2.0)
         error = [self.ee_pose.position.x - place_pose.position.x,
                 self.ee_pose.position.y - place_pose.position.y]
         pose_errors.append({'step': 'place', 'x_error': error[0], 'y_error': error[1]})
