@@ -15,9 +15,9 @@ import os
 import matplotlib.pyplot as plt
 import csv
 import numpy as np
+from robot_trajectory_logger.wiggle_ee import wiggle_pose
 
 fixed_offset = [0.41, 0.0, -0.025]  # Fixed offset (fixation center) in meters
-#!/usr/bin/env python3
 
 
 # Helper to create a neutral pose
@@ -182,19 +182,16 @@ class SimpleTeleopNode(Node):
             self.get_logger().error(f"CSV file not found at {csv_path}")
             return
         df_all = pd.read_csv(csv_path)
-
-        df_pins = df_all[df_all['identifier'] == 'pins'].reset_index(drop=True)
-        df_jigs = df_all[df_all['identifier'] == 'jigs'].reset_index(drop=True)
         df_uprofiles = df_all[df_all['identifier'] == 'UPROFILE'].reset_index(drop=True)
-        print(f"Loaded {len(df_pins)} pin poses, {len(df_jigs)} jig poses, {len(df_uprofiles)} u-profile poses.")
+        print(f"Loaded, {len(df_uprofiles)} u-profile poses.")
 
         self.sequence = []
 
 
         # --- D2: pick first D2 (between B-points), place at last D (U-profiles)---
         if len(df_uprofiles) >= 2:
-            d2_pick = df_to_poses(df_uprofiles.iloc[0:2], rotx=True, rotz=True)
-            d2_place = df_to_poses(df_uprofiles.iloc[-2:], rotx=True, rotz=True)
+            d2_pick = df_to_poses(df_uprofiles.iloc[0:4], rotx=True, rotz=True)
+            d2_place = df_to_poses(df_uprofiles.iloc[-4:], rotx=True, rotz=True)
             print("appending u profiles")
             for pick_pose, place_pose in zip(d2_pick, d2_place):
                 self.sequence.append((pick_pose, True))
@@ -333,8 +330,7 @@ class SimpleTeleopNode(Node):
         pre_place = hover_pose(place_pose)
 
         # Rotate hover pose and place pose by -15 deg in Y
-        pre_place_rot = rotate_pose_y(pre_place, 25)
-        place_pose_rot = rotate_pose_y(place_pose, 25, distance=-0.003)
+        pre_place_rot = rotate_pose_y(pre_place, 20)
 
         # move to rotated pre-place
         self.cartesian_pub.publish(pre_place_rot)
@@ -345,9 +341,9 @@ class SimpleTeleopNode(Node):
         self.get_logger().info(f"pose error {error}")
 
         # move to rotated place pose (descend with tilt)
-        self.cartesian_pub.publish(place_pose_rot)
+        self.cartesian_pub.publish(rotate_pose_y(place_pose, 20, distance=-0.008))
         self.wait(2.0)
-        self.cartesian_pub.publish(rotate_pose_y(place_pose, 25, distance=0.003)) # drive into the pins
+        self.cartesian_pub.publish(rotate_pose_y(place_pose, 20, distance=0.003)) # drive into the pins
         self.wait(2.0)
         error = [self.ee_pose.position.x - place_pose.position.x,
                 self.ee_pose.position.y - place_pose.position.y]
@@ -355,7 +351,7 @@ class SimpleTeleopNode(Node):
         self.get_logger().info(f"pose error {error}")
 
         # move to final place pose (upright)
-        self.cartesian_pub.publish(rotate_pose_y(place_pose, 0, distance=0.003)) #still drive into the pins
+        self.cartesian_pub.publish(rotate_pose_y(place_pose, 0, distance=0.000)) #still drive into the pins
         self.event_log.append((time.time(), 'insertion'))
         self.get_logger().info(f"Published place pose")
         self.wait(2.5)

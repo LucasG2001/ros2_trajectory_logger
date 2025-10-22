@@ -31,6 +31,7 @@ setup(
              'Lprofiles = robot_trajectory_logger.send_Lprofiles:main',
              'Uprofiles = robot_trajectory_logger.send_uprofiles:main',
              'send_nuts = robot_trajectory_logger.send_nuts:main', 
+             'calibrate_cam_aruco = robot_trajectory_logger.calibrate_cam_aruco:main',
         ],
     },
 )

@@ -17,10 +17,10 @@ import csv
 import numpy as np
 from robot_trajectory_logger.wiggle_ee import wiggle_pose
 
-fixed_offset = [0.41, 0.0, 0.029]  # Fixed offset (fixation center) in meters
+fixed_offset = [0.41, 0.0, 0.062]  # Fixed offset (fixation center) in meters
 #!/usr/bin/env python3
 
-def rotate_pose_around_world_z(pose_in: Pose, angle_deg) -> Pose:
+def rotate_orientation_around_world_z(pose_in: Pose, angle_deg) -> Pose:
     """
     Rotate a Pose by -120 degrees around the world Z axis.
     Uses scipy.spatial.transform.Rotation for efficiency.
@@ -37,12 +37,11 @@ def rotate_pose_around_world_z(pose_in: Pose, angle_deg) -> Pose:
     Rz = R.from_euler('z', angle_deg, degrees=True)
 
     # Rotate position and orientation in world frame
-    p_rot = Rz.apply(p)
     q_rot = (Rz * R.from_quat(q)).as_quat()
 
     # Build output pose
     pose_out = Pose()
-    pose_out.position.x, pose_out.position.y, pose_out.position.z = p_rot
+    pose_out.position = pose_in.position
     pose_out.orientation.x, pose_out.orientation.y, pose_out.orientation.z, pose_out.orientation.w = q_rot
 
     return pose_out
@@ -100,6 +99,8 @@ def df_to_poses(df, rotx = True, rotz = False):
         p.orientation.y = 0.0
         p.orientation.z = 0.0
         p.orientation.w = 0.0
+        
+        p=rotate_orientation_around_world_z(p, 120)
 
         if p.position.x > 0.299:
             poses.append(p)
@@ -295,20 +296,24 @@ class SimpleTeleopNode(Node):
         # move down to place
         self.cartesian_pub.publish(place_pose)
         self.get_logger().info(f"Published place pose")
-        self.wait(0.5) # halfway through
-        self.float_mode_pub.publish(Int16(data=1.0)) # low stiffness
+        self.float_mode_pub.publish(Int16(data=2)) # low stiffness
         self.cartesian_pub.publish(place_pose)
         self.wait(1.5)
-        self.cartesian_pub.publish(rotate_pose_around_world_z(place_pose, angle_deg=-120))
+        self.cartesian_pub.publish(rotate_orientation_around_world_z(place_pose, angle_deg=-180))
         self.wait(2.0)
+        # rotate again
         # release
-        self.send_move(0.06)
-        self.wait(1.0)
-        self.float_mode_pub.publish(Int16(data=0)) # control mode = 0 (Hgh STIFFNESS)
-
+        self.send_move(0.04)
+        self.wait(0.5)
+        self.float_mode_pub.publish(Int16(data=0)) # control mode = 0 (High STIFFNESS)
+        self.cartesian_pub.publish(place_pose)
+        self.wait(1.5)
+        self.send_grasp()
+        self.cartesian_pub.publish(rotate_orientation_around_world_z(place_pose, angle_deg=-180))
+        self.wait(1.5)
         # lift back up
-        pre_place.position.z += 0.06
-        self.cartesian_pub.publish(pre_place)
+        self.send_move(0.04) # open gripper
+        self.cartesian_pub.publish(self.make_neutral_pose())
         self.wait(3.0)
 
         # -------------------
