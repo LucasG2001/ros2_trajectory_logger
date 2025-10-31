@@ -17,7 +17,7 @@ import csv
 import numpy as np
 from robot_trajectory_logger.wiggle_ee import wiggle_pose
 
-fixed_offset = [0.41, 0.0, 0.062]  # Fixed offset (fixation center) in meters
+fixed_offset = [0.41, 0.0, 0.06]  # Fixed offset (fixation center) in meters
 #!/usr/bin/env python3
 
 def rotate_orientation_around_world_z(pose_in: Pose, angle_deg) -> Pose:
@@ -296,8 +296,9 @@ class SimpleTeleopNode(Node):
         # move down to place
         self.cartesian_pub.publish(place_pose)
         self.get_logger().info(f"Published place pose")
-        self.float_mode_pub.publish(Int16(data=2)) # low stiffness
         self.cartesian_pub.publish(place_pose)
+        self.wait(1.25)
+        self.float_mode_pub.publish(Int16(data=2)) # low stiffness
         self.wait(1.5)
         self.cartesian_pub.publish(rotate_orientation_around_world_z(place_pose, angle_deg=-180))
         self.wait(2.0)

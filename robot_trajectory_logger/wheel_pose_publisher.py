@@ -4,7 +4,8 @@ marker_tracking_node.py
 
 Continuously tracks a single ArUco marker using the ZED camera,
 transforms its 3D midpoint pose to the robot frame using the precomputed
-T_cam_to_robot.csv, and publishes it to /wheel_center as geometry_msgs/Pose.
+T_chess and cam_0 transforms from transform.yaml, and publishes it to
+/wheel_center as geometry_msgs/Pose.
 """
 
 import rclpy
@@ -12,6 +13,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Pose
 import numpy as np
 import cv2
+import yaml
 from scipy.spatial.transform import Rotation as R
 import time
 
@@ -26,11 +28,21 @@ except Exception:
 # Helper functions
 # ------------------------
 
-def load_transform(csv_path="T_cam_to_robot.csv"):
-    """Load 4x4 transform matrix from CSV."""
-    T = np.loadtxt(csv_path, delimiter=",")
+def load_transform_from_yaml(yaml_path="transform.yaml", key="T_chess_cam2"):
+    """Load 4x4 transform matrix from YAML (handles nested 'transforms' key)."""
+    with open(yaml_path, "r") as f:
+        data = yaml.safe_load(f)
+
+    # Support both nested and flat formats
+    if "transforms" in data:
+        data = data["transforms"]
+
+    if key not in data:
+        raise KeyError(f"Key '{key}' not found under 'transforms' in {yaml_path}")
+
+    T = np.array(data[key], dtype=float)
     if T.shape != (4, 4):
-        raise ValueError("Invalid transform file shape; expected 4x4.")
+        raise ValueError(f"Invalid transform shape for '{key}'; expected 4x4.")
     return T
 
 
@@ -75,12 +87,14 @@ class WheelPublisherNode(Node):
     def __init__(self):
         super().__init__("marker_tracking_node")
 
-        # Load camera-to-robot transform
+        # Load transforms from YAML
         try:
-            self.T_cam_to_robot = load_transform("T_cam_to_robot.csv")
-            self.get_logger().info("Loaded transform T_cam_to_robot.csv")
+            T_cam_0 = load_transform_from_yaml("transform.yaml", "T_chess_cam2")
+            T_chess = load_transform_from_yaml("transform.yaml", "T_robot_chess")
+            self.T_cam_to_robot = T_chess @ T_cam_0
+            self.get_logger().info("Loaded transforms from transform.yaml and computed T_total = T_chess @ T_cam_0")
         except Exception as e:
-            self.get_logger().error(f"Failed to load transform: {e}")
+            self.get_logger().error(f"Failed to load transform(s): {e}")
             raise SystemExit
 
         # Publisher
@@ -113,15 +127,9 @@ class WheelPublisherNode(Node):
     def spin_forever(self):
         """Main tracking loop."""
         i = 0
-         # Publish
         msg = Pose()
-        msg.position.x = 0.0
-        msg.position.y = 0.0
-        msg.position.z = 0.0
-        msg.orientation.x = 0.0
-        msg.orientation.y = 0.0
-        msg.orientation.z = 0.0
-        msg.orientation.w = 1.0  # orientation not used here
+        msg.orientation.w = 1.0  # orientation not used
+
         while rclpy.ok():
             grab_status = self.zed.grab()
             if grab_status != sl.ERROR_CODE.SUCCESS:
@@ -139,8 +147,9 @@ class WheelPublisherNode(Node):
             # Detect ArUco
             corners_list, ids, _ = self.detector.detectMarkers(gray)
             if ids is None or len(ids) == 0:
-                # cv2.imshow("ZED Marker Tracking", gray)
-                # cv2.waitKey(1)
+                cv2.imshow("ZED Marker Tracking", gray)
+                if cv2.waitKey(1) == 27:  # ESC
+                    break
                 continue
 
             # Use first marker
@@ -154,33 +163,29 @@ class WheelPublisherNode(Node):
             mid3d = pixel_to_point3(self.zed, u, v)
             if mid3d is None:
                 self.get_logger().warn("Invalid 3D point from ZED; skipping.")
-                # cv2.imshow("ZED Marker Tracking", img_bgr)
-                # cv2.waitKey(1)
+                cv2.imshow("ZED Marker Tracking", img_bgr)
+                if cv2.waitKey(1) == 27:
+                    break
                 continue
 
             # Transform to robot coordinates
             p_robot = cam_to_robot(self.T_cam_to_robot, mid3d)
-
-            msg.position.x = float(p_robot[0])
-            msg.position.y = float(p_robot[1])
-            msg.position.z = float(p_robot[2])
+            msg.position.x, msg.position.y, msg.position.z = p_robot
             self.pose_pub.publish(msg)
 
-            # Print
             if i % 30 == 0:
                 print(f"[wheel_center] Robot-frame marker position: {p_robot.round(3)}")
 
-            # Display
-            # cv2.putText(img_bgr, f"Marker: ({p_robot[0]:.3f}, {p_robot[1]:.3f}, {p_robot[2]:.3f}) m",
-            #             (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            # cv2.imshow("ZED Marker Tracking", img_bgr)
-            # key = cv2.waitKey(1)
-            # if key == 27:  # ESC to exit
-            #     break
+            # Display with overlay
+            cv2.putText(img_bgr,
+                        f"Marker: ({p_robot[0]:.3f}, {p_robot[1]:.3f}, {p_robot[2]:.3f}) m",
+                        (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.imshow("ZED Marker Tracking", img_bgr)
+            if cv2.waitKey(1) == 27:  # ESC to exit
+                break
 
-            # Allow ROS callbacks
             rclpy.spin_once(self, timeout_sec=0.0)
-            i+=1
+            i += 1
 
         self.cleanup()
 
